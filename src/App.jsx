@@ -1,1430 +1,2059 @@
-import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
 import { 
-  Menu, X, ArrowRight, MapPin, Phone, Mail, ArrowUpRight, Instagram, Linkedin, Plus, Minus, Play
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, ScatterChart, Scatter,
+  ComposedChart
+} from 'recharts';
+import { 
+  Activity, AlertCircle, Box, CheckCircle, ChevronRight, Clock, Cloud, 
+  Database, DollarSign, Factory, FileText, Filter, Globe, 
+  Info, Key, Layers, LayoutDashboard, Leaf, Lock, LogOut, Mail, 
+  MoreVertical, Package, Plus, RefreshCw, Search, Server, Settings, Shield, 
+  Star, Target, TrendingDown, TrendingUp, Truck, Users, X, Zap, 
+  ShieldCheck, History, Fingerprint, Calendar, Download, AlertTriangle
 } from 'lucide-react';
 
-// --- CONTEXT FOR CUSTOM CURSOR ---
-const CursorContext = createContext();
+// ============================================================================
+// 1. DATA ACCESS LAYER (MOCK DATABASE & API CLIENT)
+// ============================================================================
 
-// --- CUSTOM CSS (Injected) ---
-const ultraModernStyles = `
-  @import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@100;200;300;400;500;600;700;800;900&display=swap');
+const MOCK_DB = {
+  tenant: { id: 'TENANT-8842', name: 'Acme Electronics Corp', tier: 'Enterprise' },
+  users: [
+    { id: 'USR-001', email: 'admin@acme.com', name: 'System Admin', role: 'admin', displayRole: 'System Admin', ssoProvider: 'Azure AD' },
+    { id: 'USR-002', email: 'jane@acme.com', name: 'Jane Doe', role: 'sustainability_manager', displayRole: 'Sustainability Mgr', ssoProvider: 'Okta' },
+    { id: 'USR-003', email: 'alice@acme.com', name: 'Alice Johnson', role: 'procurement', displayRole: 'Procurement Mgr', ssoProvider: 'Google Workspace' },
+    { id: 'USR-004', email: 'bob@acme.com', name: 'Bob Williams', role: 'product_manager', displayRole: 'Product Manager', ssoProvider: 'Azure AD' },
+    { id: 'USR-005', email: 'sarah@acme.com', name: 'Sarah Lee', role: 'executive', displayRole: 'CSO (Executive)', ssoProvider: 'Okta' },
+    { id: 'USR-006', email: 'david@external.com', name: 'David Chen', role: 'auditor', displayRole: 'External Auditor', ssoProvider: 'Ping Identity' }
+  ],
+  auditLogs: [
+    { id: 'AL-993', timestamp: new Date(Date.now() - 3600000).toISOString(), actor: 'System Admin', action: 'DATA_SYNC', resource: 'SAP_ERP', status: 'SUCCESS' },
+    { id: 'AL-992', timestamp: new Date(Date.now() - 7200000).toISOString(), actor: 'System', action: 'AI_FACTOR_MAPPING', resource: 'Ecoinvent v3.9', status: 'SUCCESS' },
+    { id: 'AL-991', timestamp: new Date(Date.now() - 86400000).toISOString(), actor: 'Jane Doe', action: 'REPORT_GENERATION', resource: 'CSRD Q1', status: 'SUCCESS' },
+    { id: 'AL-990', timestamp: new Date(Date.now() - 90000000).toISOString(), actor: 'API_Gateway', action: 'WEBHOOK_INVOCATION', resource: 'Oracle NetSuite', status: 'FAIL' },
+  ],
+  portfolio: [
+    { month: 'Jan', baseline: 450, actual: 450, target: 400, scope1: 45, scope2: 120, scope3: 285 },
+    { month: 'Feb', baseline: 460, actual: 440, target: 390, scope1: 42, scope2: 115, scope3: 283 },
+    { month: 'Mar', baseline: 470, actual: 430, target: 380, scope1: 40, scope2: 110, scope3: 280 },
+    { month: 'Apr', baseline: 480, actual: 415, target: 370, scope1: 38, scope2: 100, scope3: 277 },
+    { month: 'May', baseline: 490, actual: 400, target: 360, scope1: 35, scope2: 95,  scope3: 270 },
+    { month: 'Jun', baseline: 500, actual: 385, target: 350, scope1: 32, scope2: 88,  scope3: 265 },
+  ],
+  regional: [
+    { region: 'APAC', emissions: 1950, target: 1800 },
+    { region: 'North Am.', emissions: 1050, target: 1200 },
+    { region: 'EMEA', emissions: 820, target: 950 },
+    { region: 'LATAM', emissions: 280, target: 300 },
+  ],
+  supplierRisk: [
+    { name: 'Shenzhen Plastics', emissions: 12500, quality: 35, risk: 80 },
+    { name: 'Taiwan Tech Boards', emissions: 8400, quality: 95, risk: 20 },
+    { name: 'Seoul Micro', emissions: 6200, quality: 75, risk: 40 },
+    { name: 'FastFreight', emissions: 18500, quality: 20, risk: 95 },
+    { name: 'Global Metals', emissions: 4300, quality: 85, risk: 30 }
+  ],
+  hotspots: {
+    topDrivers: [
+      { name: 'Virgin PC/ABS Housing', emissions: 1250, category: 'Material', quality: 'Primary' },
+      { name: 'Lithium-ion Battery Pack', emissions: 980, category: 'Material', quality: 'Secondary' },
+      { name: 'Trans-Pacific Air Freight', emissions: 850, category: 'Logistics', quality: 'Spend-based' },
+      { name: 'Main PCB Assembly', emissions: 620, category: 'Manufacturing', quality: 'Secondary' },
+      { name: 'Cardboard Packaging', emissions: 140, category: 'Packaging', quality: 'Primary' },
+    ],
+    qualitySplit: [
+      { name: 'Primary Data (EPDs)', value: 35, color: '#10b981' },
+      { name: 'Secondary Data (LCA DB)', value: 45, color: '#3b82f6' },
+      { name: 'Spend-based Estimates', value: 20, color: '#f43f5e' }
+    ]
+  },
+  thermostatBom: [
+    { id: 'c1', name: 'Housing (Virgin PC/ABS)', weight: 120, materialEmissionFactor: 3.5, supplier: 'Shenzhen Plastics Co.', location: [22.5431, 114.0579], type: 'supplier', country: 'China', dataSource: 'Primary EPD', confidence: 95 },
+    { id: 'c2', name: 'Main PCB', weight: 45, materialEmissionFactor: 25.0, supplier: 'Taiwan Tech Boards', location: [25.0330, 121.5654], type: 'supplier', country: 'Taiwan', dataSource: 'Ecoinvent v3.9', confidence: 78 },
+    { id: 'c3', name: 'Sensor Array', weight: 15, materialEmissionFactor: 18.0, supplier: 'Seoul Micro', location: [37.5665, 126.9780], type: 'supplier', country: 'South Korea', dataSource: 'Spend-based proxy', confidence: 42 },
+    { id: 'c4', name: 'Packaging (Cardboard)', weight: 200, materialEmissionFactor: 0.9, supplier: 'Local Pack Co.', location: [30.2672, -97.7431], type: 'supplier', country: 'USA', dataSource: 'Primary EPD', confidence: 98 },
+    { id: 'c5', name: 'Glass Display Panel', weight: 80, materialEmissionFactor: 1.5, supplier: 'Munich Glassworks', location: [48.1351, 11.5820], type: 'supplier', country: 'Germany', dataSource: 'Ecoinvent v3.9', confidence: 82 }
+  ],
+  initiatives: [
+    { id: 'INT-101', title: 'Transition to Recycled PC/ABS', category: 'Material Subs', status: 'Approved', owner: 'J. Smith', target: '-120 tCO₂e', cost: '+$0.15/unit', urgency: 'High', date: 'Oct 15' },
+    { id: 'INT-102', title: 'Localize EMEA Aluminum Sourcing', category: 'Logistics', status: 'In Progress', owner: 'A. Johnson', target: '-420 tCO₂e', cost: '-$0.05/unit', urgency: 'Critical', date: 'Nov 01' },
+    { id: 'INT-103', title: 'Renewable PPA for Austin Plant', category: 'Energy', status: 'Verified', owner: 'B. Williams', target: '-890 tCO₂e', cost: '+$12k/yr', urgency: 'Medium', date: 'Dec 01' },
+    { id: 'INT-104', title: 'Audit FastFreight Logistics', category: 'Primary Data', status: 'Identified', owner: 'A. Johnson', target: 'Data Quality', cost: '$0', urgency: 'Low', date: 'TBD' },
+  ],
+  reports: [
+    { id: 'REP-25-081', name: 'FY24 GHG Protocol Summary', type: 'Annual Disclosure', framework: 'GHG Protocol', date: 'Jan 15, 2025', status: 'Completed', user: 'Jane Doe' },
+    { id: 'REP-25-082', name: 'Q1 Product Footprint (Thermostat)', type: 'LCA Extract', framework: 'ISO 14067', date: 'Apr 02, 2025', status: 'Completed', user: 'System Admin' },
+    { id: 'REP-25-083', name: 'Supplier Disclosure Pack - EMEA', type: 'Supply Chain', framework: 'Custom', date: 'May 10, 2025', status: 'Failed', user: 'Jane Doe' },
+    { id: 'REP-25-084', name: 'EU CSRD Pre-Assessment', type: 'Compliance', framework: 'CSRD', date: 'Jun 01, 2025', status: 'Completed', user: 'System' },
+  ],
+  suppliers: [
+    { id: 'SUP-001', name: 'Shenzhen Plastics Co.', type: 'Plastics & Polymers', location: 'China', confidence: 'Low', status: 'Pending', emissions: 12500, score: 'C' },
+    { id: 'SUP-002', name: 'Taiwan Tech Boards', type: 'Electronics', location: 'Taiwan', confidence: 'High', status: 'Verified', emissions: 8400, score: 'A' },
+    { id: 'SUP-003', name: 'Seoul Micro', type: 'Semiconductors', location: 'South Korea', confidence: 'Medium', status: 'In Review', emissions: 6200, score: 'B' },
+    { id: 'SUP-004', name: 'Texas EcoPlastics', type: 'Recycled Materials', location: 'USA', confidence: 'High', status: 'Verified', emissions: 1100, score: 'A+' },
+    { id: 'SUP-005', name: 'Local Pack Co.', type: 'Packaging', location: 'USA', confidence: 'High', status: 'Verified', emissions: 850, score: 'A' },
+    { id: 'SUP-006', name: 'Global Metals Inc.', type: 'Raw Materials', location: 'Germany', confidence: 'High', status: 'Verified', emissions: 4300, score: 'A-' },
+    { id: 'SUP-007', name: 'FastFreight Logistics', type: 'Transport', location: 'Global', confidence: 'Low', status: 'Action Required', emissions: 18500, score: 'D' },
+  ]
+};
 
-  :root {
-    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-    --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
-  }
+// ============================================================================
+// 2. BACKEND SERVICE SIMULATION (API, AUTH, AUDIT, AI)
+// ============================================================================
+
+const ServerServices = {
+  Auth: {
+    ssoLogin: async (email) => {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const user = MOCK_DB.users.find(u => u.email === email) || MOCK_DB.users[0];
+      ServerServices.Audit.log(user.name, 'SSO_LOGIN_SUCCESS', user.ssoProvider);
+      return user;
+    },
+    verifyMFA: async (user) => {
+      ServerServices.Audit.log(user.name, 'MFA_VERIFICATION_SUCCESS', 'Authenticator App');
+    },
+    failMFA: async (user) => {
+      ServerServices.Audit.log(user ? user.name : 'Unknown User', 'MFA_VERIFICATION_FAILED', 'Authenticator App', 'FAIL');
+    }
+  },
   
-  html, body {
-    cursor: none; /* Hide default cursor for desktop */
-    scroll-behavior: smooth;
-    font-family: 'Urbanist', sans-serif;
-  }
+  Audit: {
+    log: (actor, action, resource, status = 'SUCCESS') => {
+      const newLog = {
+        id: `AL-${Math.floor(Math.random() * 10000)}`,
+        timestamp: new Date().toISOString(),
+        actor, action, resource, status
+      };
+      MOCK_DB.auditLogs.unshift(newLog);
+    },
+    getLogs: async (user) => {
+      if (user.role !== 'admin' && user.role !== 'auditor') throw new Error("403 Forbidden");
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return MOCK_DB.auditLogs;
+    }
+  },
 
-  /* Clip Path Unveil Animation */
-  .clip-hidden {
-    clip-path: polygon(0 100%, 100% 100%, 100% 100%, 0 100%);
-  }
-  .clip-visible {
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-  }
-  .clip-transition {
-    transition: clip-path 1.5s var(--ease-in-out-quint);
-  }
-
-  /* Hide scrollbar for clean look */
-  ::-webkit-scrollbar { width: 8px; }
-  ::-webkit-scrollbar-track { background: #fafafa; }
-  ::-webkit-scrollbar-thumb { background: #e4e4e7; }
-  ::-webkit-scrollbar-thumb:hover { background: #d4d4d8; }
-
-  @media (max-width: 768px) {
-    html, body { cursor: auto; }
-    #custom-cursor { display: none !important; }
-  }
-
-  /* Hollow Text Effect */
-  .text-hollow {
-    color: transparent;
-    -webkit-text-stroke: 1px #09090b; /* zinc-950 */
-  }
-  .text-hollow-white {
-    color: transparent;
-    -webkit-text-stroke: 1px #ffffff;
-  }
-  @media (min-width: 768px) {
-    .text-hollow { -webkit-text-stroke: 2px #09090b; }
-    .text-hollow-white { -webkit-text-stroke: 2px #ffffff; }
-  }
-
-  /* Seamless Marquee Animation */
-  @keyframes marquee {
-    0% { transform: translateX(0%); }
-    100% { transform: translateX(-50%); }
-  }
-  .animate-marquee {
-    display: flex;
-    width: max-content;
-    animation: marquee 30s linear infinite;
-  }
-`;
-
-// --- INTERACTIVE COMPONENTS ---
-
-const CustomCursor = () => {
-  const { isHovering } = useContext(CursorContext);
-  const [position, setPosition] = useState({ x: -100, y: -100 });
-  const [isClicking, setIsClicking] = useState(false);
-
-  useEffect(() => {
-    const updatePosition = (e) => setPosition({ x: e.clientX, y: e.clientY });
-    const handleMouseDown = () => setIsClicking(true);
-    const handleMouseUp = () => setIsClicking(false);
-
-    window.addEventListener('mousemove', updatePosition);
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', updatePosition);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
-
-  return (
-    <div 
-      id="custom-cursor"
-      className="fixed top-0 left-0 w-8 h-8 pointer-events-none z-[100] mix-blend-difference flex items-center justify-center transition-transform duration-300 ease-out"
-      style={{ transform: `translate(${position.x - 16}px, ${position.y - 16}px)` }}
-    >
-      <div 
-        className={`bg-white rounded-full transition-all duration-300 ${
-          isHovering ? 'w-16 h-16 opacity-100' : (isClicking ? 'w-2 h-2 opacity-50' : 'w-4 h-4 opacity-100')
-        }`}
-      />
-    </div>
-  );
-};
-
-const Interactive = ({ children, className = '', onClick }) => {
-  const { setIsHovering } = useContext(CursorContext);
-  return (
-    <div 
-      className={className}
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
-      onClick={onClick}
-    >
-      {children}
-    </div>
-  );
-};
-
-const useOnScreen = (options) => {
-  const ref = useRef();
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        setIsVisible(true);
-        if (ref.current) observer.unobserve(ref.current);
+  Data: {
+    getCollection: async (collectionName, user) => {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Strict Backend RBAC Filtering
+      if (collectionName === 'integrations' && user.role !== 'admin') throw new Error("403 Forbidden");
+      if (['portfolio', 'regional', 'supplierRisk', 'hotspots', 'thermostatBom'].includes(collectionName) && ['admin', 'auditor'].includes(user.role)) {
+        // Mock returning empty or throwing based on strict access
+        // For dashboard safety, we will let auditor see basic metrics if needed, but restrict admins from business data.
       }
-    }, { threshold: 0.1, ...options });
 
-    const currentRef = ref.current;
-    if (currentRef) observer.observe(currentRef);
-    return () => { if (currentRef) observer.unobserve(currentRef); };
-  }, [options]);
-
-  return [ref, isVisible];
-};
-
-const UnveilImage = ({ src, alt, className = '' }) => {
-  const [ref, isVisible] = useOnScreen({ threshold: 0.2 });
-  return (
-    <div ref={ref} className={`overflow-hidden relative ${className}`}>
-      <img 
-        src={src} 
-        alt={alt} 
-        className={`w-full h-full object-cover clip-transition ${isVisible ? 'clip-visible scale-100' : 'clip-hidden scale-110'} transition-transform duration-[2s] ease-out`}
-      />
-    </div>
-  );
-};
-
-const UnveilVideo = ({ src, className = '' }) => {
-  const [ref, isVisible] = useOnScreen({ threshold: 0.2 });
-  return (
-    <div ref={ref} className={`overflow-hidden relative ${className}`}>
-      <video 
-        autoPlay 
-        loop 
-        muted 
-        playsInline 
-        src={src}
-        className={`w-full h-full object-cover clip-transition ${isVisible ? 'clip-visible scale-100' : 'clip-hidden scale-110'} transition-transform duration-[2s] ease-out`}
-      />
-    </div>
-  );
-};
-
-const HeroImageReveal = ({ src, alt, className = '' }) => {
-  const [isLoaded, setIsLoaded] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoaded(true), 100);
-    return () => clearTimeout(timer);
-  }, []);
-  return (
-    <div className={`overflow-hidden relative ${className}`}>
-      <img 
-        src={src} 
-        alt={alt} 
-        className={`w-full h-full object-cover clip-transition ${isLoaded ? 'clip-visible scale-100' : 'clip-hidden scale-110'} transition-transform duration-[2s] ease-out`}
-      />
-    </div>
-  );
-};
-
-const RevealText = ({ text, className = '', delay = 0 }) => {
-  const [ref, isVisible] = useOnScreen();
-  return (
-    <div ref={ref} className={`overflow-hidden ${className}`}>
-      <div 
-        className={`transition-transform duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-[100%] opacity-0'}`}
-        style={{ transitionDelay: `${delay}ms` }}
-      >
-        {text}
-      </div>
-    </div>
-  );
-};
-
-const Accordion = ({ question, answer, isOpen, onClick }) => {
-  return (
-    <div className="border-b border-zinc-200">
-      <Interactive>
-        <button 
-          onClick={onClick} 
-          className="w-full py-8 flex justify-between items-center text-left focus:outline-none"
-        >
-          <span className="text-xl md:text-3xl font-light text-zinc-950">{question}</span>
-          <span className="ml-4 flex-shrink-0 text-zinc-400">
-            {isOpen ? <Minus className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
-          </span>
-        </button>
-      </Interactive>
-      <div 
-        className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? 'max-h-96 pb-8 opacity-100' : 'max-h-0 opacity-0'}`}
-      >
-        <p className="text-lg md:text-xl font-light text-zinc-500 max-w-3xl leading-relaxed">{answer}</p>
-      </div>
-    </div>
-  );
-};
-
-// --- LAYOUT WRAPPER ---
-const Section = ({ children, className = '', innerClassName = '', noVerticalPadding = false }) => (
-  <section className={`${noVerticalPadding ? '' : 'py-32 md:py-40'} px-[3%] ${className}`}>
-    <div className={`max-w-[1600px] mx-auto w-full ${innerClassName}`}>
-      {children}
-    </div>
-  </section>
-);
-
-
-// --- DUMMY CMS DATA ---
-const projectsData = [
-  { id: 1, title: 'Hobsonville Col.', location: 'Auckland', status: 'Completed', image: 'https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80' },
-  { id: 2, title: 'Epsom Arch.', location: 'Auckland', status: 'Completed', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80' },
-  { id: 3, title: 'Peninsula Terraces', location: 'Te Atatu', status: 'Selling Now', image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80' }
-];
-
-const servicesData = [
-  { 
-    title: 'Development', 
-    desc: 'From identifying great locations to thoughtfully planned residential communities. Full lifecycle management.', 
-    image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-    features: ['Site Acquisition', 'Feasibility Studies', 'Resource Consents', 'Community Planning']
+      if (!['initiatives', 'reports', 'auditLogs', 'regional', 'supplierRisk', 'users'].includes(collectionName)) {
+        ServerServices.Audit.log(user.name, 'READ_COLLECTION', collectionName);
+      }
+      return MOCK_DB[collectionName];
+    },
+    createInitiative: async (payload, user) => {
+      // Removed admin and auditor from initiative creation
+      if (!['sustainability_manager', 'procurement', 'product_manager', 'executive'].includes(user.role)) throw new Error("403 Forbidden");
+      await new Promise(resolve => setTimeout(resolve, 600));
+      const newInit = {
+        id: `INT-${Math.floor(Math.random() * 900) + 100}`,
+        ...payload,
+        status: 'Identified',
+        date: 'TBD'
+      };
+      MOCK_DB.initiatives.unshift(newInit);
+      ServerServices.Audit.log(user.name, 'CREATE_INITIATIVE', newInit.id);
+      return newInit;
+    },
+    runReportJob: async (payload, user) => {
+      // Removed admin and procurement from reports
+      if (!['sustainability_manager', 'executive', 'auditor'].includes(user.role)) throw new Error("403 Forbidden");
+      await new Promise(resolve => setTimeout(resolve, 800)); 
+      const newReport = {
+        id: `REP-25-${Math.floor(Math.random() * 900) + 100}`,
+        name: payload.name,
+        type: 'Compliance Export',
+        framework: payload.framework,
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+        status: 'Running',
+        user: user.name
+      };
+      MOCK_DB.reports.unshift(newReport);
+      ServerServices.Audit.log(user.name, 'EXECUTE_REPORT_JOB', newReport.id);
+      setTimeout(() => {
+        const targetReport = MOCK_DB.reports.find(r => r.id === newReport.id);
+        if(targetReport) targetReport.status = 'Completed';
+      }, 5000);
+      return newReport;
+    },
+    triggerIntegrationSync: async (systemName, user) => {
+      if (user.role !== 'admin') throw new Error("403 Forbidden");
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      ServerServices.Audit.log(user.name, 'MANUAL_INTEGRATION_SYNC', systemName);
+      return { status: 'SUCCESS', message: `Successfully synchronized datasets from ${systemName}` };
+    },
+    processIngestionFile: async (fileDetails, user) => {
+      // Admin should not process business ingestion files
+      if (!['sustainability_manager', 'auditor'].includes(user.role)) throw new Error("403 Forbidden");
+      ServerServices.Audit.log(user.name, 'UPLOAD_ERP_EXTRACT', fileDetails.name);
+      const prompt = `Map these raw ERP inputs to LCA databases: "Hsg_Blk_PCABS_v2", "Alum_Sheet_3mm", "Pkg_Card_Brn", "Unk_Plstc", "Screw_SS". Return pure JSON array.`;
+      await ServerServices.AI.generateInsight(prompt, user);
+      
+      ServerServices.Audit.log(user.name, 'AI_SEMANTIC_MAPPING_COMPLETE', '5 rows mapped');
+      return [
+        { raw: "Hsg_Blk_PCABS_v2", mapped: "Polycarbonate/ABS blend, virgin", confidence: 92, status: "Auto-Mapped", factor: 3.5 },
+        { raw: "Alum_Sheet_3mm", mapped: "Aluminum alloy, primary, at plant", confidence: 95, status: "Auto-Mapped", factor: 11.2 },
+        { raw: "Pkg_Card_Brn", mapped: "Corrugated board box, recycled", confidence: 88, status: "Auto-Mapped", factor: 0.8 },
+        { raw: "Unk_Plstc", mapped: "Injection molding, generic plastic", confidence: 45, status: "Needs Review", factor: 2.1 },
+        { raw: "Screw_SS", mapped: "Steel, stainless 316, drawn wire", confidence: 98, status: "Auto-Mapped", factor: 4.8 }
+      ];
+    }
   },
-  { 
-    title: 'Construction', 
-    desc: 'Reliable, high-quality construction with absolute attention to detail, timelines, and cost control.', 
-    image: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-    features: ['Fixed-Price Contracts', 'Rigorous Quality Assurance', 'Timely Execution', 'Health & Safety Compliance']
-  },
-  { 
-    title: 'Custom Homes', 
-    desc: 'Standalone homes tailored to modern lifestyles, combining smart architectural design with long-term value.', 
-    image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-    features: ['Bespoke Architectural Design', 'Premium Material Sourcing', 'Interior Design Consulting', 'Turnkey Solutions']
-  },
-  { 
-    title: 'Project Management', 
-    desc: 'From planning to subdivision, compliance, and completion, we handle every stage of the journey.', 
-    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-    features: ['Timeline Management', 'Budget Control', 'Contractor Coordination', 'Final Certification']
-  }
-];
 
-const valuesData = [
-  { num: '01', title: 'Architectural Integrity', desc: 'We never compromise on design. Every home is built with a focus on spatial flow, natural light, and premium materials.' },
-  { num: '02', title: 'Transparent Process', desc: 'From day one, our clients have full visibility into costs, timelines, and construction progress. No surprises.' },
-  { num: '03', title: 'Enduring Quality', desc: 'We build homes that last generations. Our rigorous quality assurance guarantees excellence at every phase.' }
-];
+  AI: {
+    generateInsight: async (prompt, user) => {
+      const apiKey = ""; 
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: "You are an AI Sustainability Assistant." }] },
+        generationConfig: { temperature: 0.1 }
+      };
 
-const processData = [
-  { step: '01', title: 'Discovery', desc: 'We begin with a deep dive into your vision, site potential, and feasibility. We establish clear parameters for success.' },
-  { step: '02', title: 'Architecture', desc: 'Our design team translates your brief into conceptual frameworks, managing all local council compliance and resource consents.' },
-  { step: '03', title: 'Construction', desc: 'Execution with precision. Our experienced project managers and builders bring the architectural plans to life.' },
-  { step: '04', title: 'Handover', desc: 'Rigorous quality assurance, final certifications, and the moment we hand over the keys to your completed property.' }
-];
-
-const faqData = [
-  { q: "Do you handle both design and construction?", a: "Yes. Pillar Properties operates as an end-to-end partner. We manage the entire lifecycle from initial architectural concepts and council consents through to the final build and interior finishing." },
-  { q: "What areas of Auckland do you service?", a: "We primarily operate across the greater Auckland region, with a strong focus on the central suburbs, North Shore, and emerging developments in the West and South." },
-  { q: "Do you work with investors for multi-unit developments?", a: "Absolutely. A large portion of our portfolio consists of high-yield townhouse and terraced home developments tailored for property investors and syndicates." },
-  { q: "How do you ensure projects stay on budget?", a: "We provide fixed-price contracts and highly detailed initial scoping. Our transparent procurement process and tight project management eliminate unexpected variations." }
-];
-
-const teamData = [
-  { name: 'James Carter', role: 'Managing Director', image: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80' },
-  { name: 'Elena Rostova', role: 'Head of Architecture', image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80' },
-  { name: 'Marcus Chen', role: 'Lead Developer', image: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80' }
-];
-
-const milestonesData = [
-  { year: '2019', title: 'The Foundation', desc: 'Pillar Properties was established with a vision to redefine Auckland residential architecture.' },
-  { year: '2021', title: 'First Major Project', desc: 'Completed the landmark Epsom Architectural series, setting a new benchmark for luxury.' },
-  { year: '2023', title: 'Expansion & Growth', desc: 'Scaled operations to manage over 15 active sites simultaneously across the greater Auckland region.' },
-  { year: '2026', title: 'Sustainable Future', desc: 'Committed to 100% passive heating integration and carbon-neutral construction practices.' }
-];
-
-const awardsData = [
-  { year: '2024', title: 'NZIA Local Architecture Award', category: 'Housing - Multi Unit' },
-  { year: '2025', title: 'Master Builders House of the Year', category: 'Gold Award' },
-  { year: '2026', title: 'Sustainable Design Excellence', category: 'Innovation in Building' }
-];
-
-const insightsData = [
-  { category: 'Architecture', date: 'March 2026', title: 'The Rise of Minimalist Concrete in Auckland Homes' },
-  { category: 'Market Update', date: 'February 2026', title: 'Navigating Resource Consents for Multi-Unit Builds' },
-  { category: 'Sustainability', date: 'January 2026', title: 'Integrating Passive Heating into Luxury Designs' }
-];
-
-const futureProjectsData = [
-  { title: 'The Parnell Ascend', location: 'Parnell, Auckland', expected: 'Q3 2026' },
-  { title: 'Orakei Basin Villas', location: 'Orakei, Auckland', expected: 'Q4 2026' },
-  { title: 'Grey Lynn Urban', location: 'Grey Lynn, Auckland', expected: 'Q1 2027' }
-];
-
-const signatureDetails = [
-  { title: "Bespoke Joinery", desc: "Custom cabinetry and shelving designed to blend seamlessly into the architectural form, eliminating visual clutter.", image: "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" },
-  { title: "Polished Concrete", desc: "Thermal mass heating meets industrial elegance with our signature poured and ground floors.", image: "https://images.unsplash.com/photo-1600607686527-6fb886090705?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" },
-  { title: "Spatial Harmony", desc: "Double-height voids and floor-to-ceiling glazing engineered to capture and maximize natural Auckland light.", image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" }
-];
-
-const galleryData = [
-  "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1613490908677-62a26500ac13?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1503387762-592deb58ef4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1541888086925-0c13bb4229f7?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1518780664697-55e3ad937233?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1556910103-1c02745aae4d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1600585154363-67eb9e2e2099?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1512915922686-57c11dde9b6b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1576013551627-c0208f3216fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1616594039964-ae9021a400a0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80",
-  "https://images.unsplash.com/photo-1600607686527-6fb886090705?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
-];
-
-// Marquee Text Loop
-const marqueeItems = [
-  "Residential Developers", "Architectural Builders", "Project Managers", "Investment Partners",
-  "Residential Developers", "Architectural Builders", "Project Managers", "Investment Partners"
-];
-
-// --- AI HELPER FUNCTION ---
-const generateAIBrief = async (userPrompt) => {
-  const apiKey = "";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-  
-  const systemInstruction = `You are an expert architectural consultant for Pillar Properties, a premium residential developer in Auckland, New Zealand. 
-The user will describe their dream home or investment project. 
-Respond with a highly professional, minimalist, and structured architectural brief containing exactly these three sections:
-CONCEPT SUMMARY: A 2-sentence sophisticated summary of the vision.
-DESIGN DIRECTION: Recommended materials, architectural style, and spatial flow.
-PROJECTED TIMELINE: A realistic high-level timeline for Auckland (e.g., Feasibility, Consent, Build).
-Keep the tone ultra-premium, confident, and concise. Use simple plain text with capital letters for section headers. Do not use asterisks or markdown styling.`;
-
-  const payload = {
-    contents: [{ parts: [{ text: userPrompt }] }],
-    systemInstruction: { parts: [{ text: systemInstruction }] }
-  };
-
-  const delays = [1000, 2000, 4000, 8000, 16000];
-  let lastError = null;
-
-  for (let i = 0; i <= delays.length; i++) {
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || "No brief generated. Please try again.";
-    } catch (error) {
-      lastError = error;
-      if (i < delays.length) {
-        await new Promise(resolve => setTimeout(resolve, delays[i]));
+      try {
+        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!response.ok) throw new Error("API Error");
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+      } catch (error) {
+        return "Backend AI service disconnected. Operating in offline deterministic mode.";
       }
     }
   }
-  return "We are currently experiencing high demand. Please contact us directly to discuss your vision.";
 };
 
-// --- PAGES ---
+const EmissionsService = {
+  calculateDistance: (lat1, lon1, lat2, lon2) => {
+    const R = 6371; 
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2); 
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))); 
+  },
 
-const HomePage = ({ navigate }) => {
-  const [hoveredProject, setHoveredProject] = useState(projectsData[0].image);
-  const [activeDetail, setActiveDetail] = useState(0);
-  const [openFaqIndex, setOpenFaqIndex] = useState(null);
+  calculateProductFootprint: (bom, assembly, scenario = 'baseline') => {
+    let totalMaterial = 0, totalLogistics = 0;
+    let activeBOM = JSON.parse(JSON.stringify(bom));
+    let activeAssembly = { ...assembly };
+
+    if (scenario === 'local-recycled') {
+      activeBOM[0] = { ...activeBOM[0], name: 'Housing (Recycled Ocean PC)', materialEmissionFactor: 1.2, supplier: 'Texas EcoPlastics', location: [29.7604, -95.3698], country: 'USA', dataSource: 'Primary EPD', confidence: 99 };
+      activeAssembly.energyFactor = 0.05; 
+    }
+
+    const nodes = [], links = [];
+    activeBOM.forEach(item => {
+      const weightKg = item.weight / 1000;
+      const matEmissions = weightKg * item.materialEmissionFactor;
+      totalMaterial += matEmissions;
+      const distance = EmissionsService.calculateDistance(item.location[0], item.location[1], activeAssembly.location[0], activeAssembly.location[1]);
+      const logEmissions = weightKg * distance * 0.0001; 
+      totalLogistics += logEmissions;
+      nodes.push({ ...item, emissions: matEmissions + logEmissions });
+      links.push({ from: item.location, to: activeAssembly.location, distance: Math.round(distance), emissions: logEmissions, item: item.name });
+    });
+
+    const manufacturing = activeAssembly.energyFactor * activeAssembly.energyPerUnit;
+    const avgConfidence = activeBOM.reduce((acc, curr) => acc + curr.confidence, 0) / activeBOM.length;
+
+    return {
+      breakdown: [
+        { name: 'Materials', value: Number(totalMaterial.toFixed(2)) },
+        { name: 'Manufacturing', value: Number(manufacturing.toFixed(2)) },
+        { name: 'Logistics', value: Number(totalLogistics.toFixed(2)) }
+      ],
+      total: Number((totalMaterial + totalLogistics + manufacturing).toFixed(2)),
+      nodes: [...nodes, { ...activeAssembly, emissions: manufacturing, isHub: true }],
+      links, 
+      scenarioName: scenario,
+      dataQualityScore: Math.round(avgConfidence)
+    };
+  }
+};
+
+
+// ============================================================================
+// 3. STATE MANAGEMENT (CONTEXT & HOOKS)
+// ============================================================================
+
+const AppContext = createContext(null);
+
+function AppProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [activeRoute, setActiveRoute] = useState('dashboard');
+  
+  const useServerQuery = (collectionName) => {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [tick, setTick] = useState(0);
+
+    const refetch = () => setTick(t => t + 1);
+
+    useEffect(() => {
+      if (!user) return;
+      let isMounted = true;
+      setLoading(true);
+      ServerServices.Data.getCollection(collectionName, user)
+        .then(res => { if(isMounted) { setData(res); setLoading(false); setError(null); } })
+        .catch(err => { if(isMounted) { setError(err); setLoading(false); } });
+      return () => { isMounted = false; };
+    }, [collectionName, user, tick]);
+
+    return { data, loading, error, refetch };
+  };
+
+  const login = (userData) => setUser(userData);
+  const logout = () => {
+    ServerServices.Audit.log(user.name, 'USER_LOGOUT', 'System');
+    setUser(null);
+  };
 
   return (
-    <div className="animate-in fade-in duration-1000 bg-[#fafafa]">
-      
-      {/* Hero Section */}
-      <section className="relative h-screen min-h-[700px] flex flex-col w-full overflow-hidden justify-end pb-12 md:pb-16 px-[3%]">
-        {/* Cinematic Video Background */}
-        <div className="absolute inset-0 z-0 bg-zinc-950">
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="w-full h-full object-cover opacity-60 scale-105"
-            src="https://video.wixstatic.com/video/548938_44a59f7f875641ef8e61ad3cc16fcdd0/1080p/mp4/file.mp4"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-zinc-950/40"></div>
-        </div>
+    <AppContext.Provider value={{ user, login, logout, activeRoute, setActiveRoute, useServerQuery }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
 
-        {/* New Hero Content */}
-        <div className="w-full max-w-[1600px] mx-auto z-10 flex flex-col">
-          <RevealText text="AUCKLAND'S PREMIER RESIDENTIAL DEVELOPER" className="text-xs md:text-sm tracking-[0.3em] uppercase text-zinc-300 font-semibold mb-6" />
-          <div className="text-5xl md:text-7xl lg:text-[7vw] font-light tracking-tight text-white mb-8 md:mb-16 max-w-5xl leading-[1.1]">
-            <RevealText text="Crafting Auckland's" />
-            <RevealText text="finest homes." delay={100} />
-          </div>
-          <div className="flex flex-col md:flex-row md:items-end justify-between w-full gap-8 border-t border-white/20 pt-8">
-             <RevealText text="Over 600 premium homes delivered with uncompromising architectural integrity. Built on trust, driven by design." className="text-lg md:text-xl font-light text-zinc-300 max-w-xl" delay={200} />
-             <Interactive onClick={() => navigate('projects')} className="group flex items-center gap-4 cursor-pointer text-white">
-                <div className="w-14 h-14 rounded-full border border-white/30 backdrop-blur-sm flex items-center justify-center group-hover:bg-white group-hover:text-zinc-950 transition-colors duration-500">
-                  <ArrowRight className="w-6 h-6 transition-colors duration-500" />
-                </div>
-                <span className="uppercase tracking-[0.2em] text-sm font-semibold">Explore Portfolio</span>
-              </Interactive>
-          </div>
-        </div>
-      </section>
+const useApp = () => useContext(AppContext);
 
-      {/* Statement Section */}
-      <Section className="bg-white">
-        <div className="max-w-5xl">
-          <div className="text-3xl md:text-5xl lg:text-7xl font-light leading-tight tracking-tight text-zinc-950">
-            <RevealText text="We don't just build houses." />
-            <RevealText text="We design, develop, and manage" delay={100} className="text-zinc-400" />
-            <RevealText text="high-quality homes tailored" delay={200} />
-            <RevealText text="to modern lifestyles." delay={300} />
-          </div>
-        </div>
-        
-        {/* Trust/Conversion Strip */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mt-24 md:mt-32 border-t border-zinc-200 pt-12">
-          {[
-            { num: '600+', label: 'Homes Delivered' },
-            { num: '07', label: 'Years Experience' },
-            { num: '100%', label: 'Auckland Owned' },
-            { num: '15+', label: 'Active Sites' }
-          ].map((stat, i) => (
-            <div key={i} className="flex flex-col">
-              <RevealText text={stat.num} delay={i * 100} className="text-4xl md:text-5xl font-light text-zinc-950 mb-2" />
-              <RevealText text={stat.label} delay={i * 100 + 50} className="text-[10px] md:text-xs tracking-[0.2em] uppercase text-zinc-400 font-semibold" />
-            </div>
-          ))}
-        </div>
-      </Section>
 
-      {/* Infinite Marquee Section - Perfectly Seamless Loop */}
-      <section className="py-8 bg-zinc-950 text-white overflow-hidden flex border-y border-zinc-800 w-full relative">
-        <div className="animate-marquee text-[10px] md:text-sm tracking-[0.3em] uppercase font-semibold text-zinc-400 items-center">
-          {/* First Block */}
-          <div className="flex shrink-0 items-center">
-            {marqueeItems.map((item, idx) => (
-              <React.Fragment key={idx}>
-                <span className="mx-8 whitespace-nowrap">{item}</span>
-                <span className="mx-8 opacity-30 shrink-0">•</span>
-              </React.Fragment>
-            ))}
-          </div>
-          {/* Exact Duplicate Block for Seamless Looping */}
-          <div className="flex shrink-0 items-center">
-            {marqueeItems.map((item, idx) => (
-              <React.Fragment key={`dup-${idx}`}>
-                <span className="mx-8 whitespace-nowrap">{item}</span>
-                <span className="mx-8 opacity-30 shrink-0">•</span>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      </section>
+// ============================================================================
+// 4. SHARED UI COMPONENTS (DESIGN SYSTEM)
+// ============================================================================
 
-      {/* Process Section (Conversion Factor: Transparency) */}
-      <Section className="bg-[#fafafa]">
-        <RevealText text="METHODOLOGY" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-20" />
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-12 lg:gap-8">
-          {processData.map((process, idx) => (
-            <div key={idx} className="border-t border-zinc-200 pt-8 group">
-              <RevealText text={process.step} delay={idx * 100} className="text-5xl font-thin text-zinc-300 mb-8 group-hover:text-zinc-950 transition-colors duration-500" />
-              <RevealText text={process.title} delay={idx * 100 + 50} className="text-2xl font-light text-zinc-950 mb-4" />
-              <RevealText text={process.desc} delay={idx * 100 + 100} className="text-zinc-500 font-light leading-relaxed text-sm md:text-base" />
-            </div>
-          ))}
-        </div>
-      </Section>
+const Card = ({ children, className = '', title, action }) => (
+  <div className={`bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm flex flex-col ${className}`}>
+    {(title || action) && (
+      <div className="flex justify-between items-center mb-6">
+        {title && <h3 className="text-lg font-bold text-zinc-900 tracking-tight">{title}</h3>}
+        {action}
+      </div>
+    )}
+    {children}
+  </div>
+);
 
-      {/* Signature Details (Interactive Hover Gallery) */}
-      <Section className="bg-white border-t border-zinc-200" innerClassName="flex flex-col lg:flex-row gap-16 lg:gap-24 items-center">
-        <div className="w-full lg:w-1/2 flex flex-col justify-center">
-          <RevealText text="SIGNATURE FINISHES" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-12" />
-          <div className="flex flex-col gap-8">
-            {signatureDetails.map((detail, idx) => (
-              <div 
-                key={idx} 
-                onMouseEnter={() => setActiveDetail(idx)}
-                className="cursor-pointer group border-b border-zinc-100 pb-8 last:border-0"
-              >
-                <h3 className={`text-4xl md:text-5xl lg:text-6xl font-light tracking-tight transition-colors duration-500 ${activeDetail === idx ? 'text-zinc-950' : 'text-zinc-300 group-hover:text-zinc-400'}`}>
-                  {detail.title}
-                </h3>
-                <div className={`overflow-hidden transition-all duration-500 ease-out ${activeDetail === idx ? 'max-h-40 mt-6 opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <p className="text-zinc-500 font-light max-w-sm leading-relaxed">{detail.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="w-full lg:w-1/2 h-[500px] md:h-[700px] overflow-hidden relative bg-zinc-100 rounded-3xl shadow-sm">
-          {signatureDetails.map((detail, idx) => (
-            <img 
-              key={idx}
-              src={detail.image} 
-              alt={detail.title} 
-              className={`absolute inset-0 w-full h-full object-cover transition-all duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] ${activeDetail === idx ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-105 z-0'}`}
-            />
-          ))}
-        </div>
-      </Section>
-
-      {/* Interactive Project Roster */}
-      <Section className="bg-zinc-950 text-white relative" innerClassName="relative z-10">
-        <div className="mb-20 flex justify-between items-end">
-          <RevealText text="SELECTED WORKS" className="text-xs tracking-[0.3em] uppercase text-zinc-500 font-semibold" />
-          <Interactive onClick={() => navigate('projects')} className="hidden md:flex items-center gap-2 cursor-pointer text-zinc-400 hover:text-white transition-colors">
-            <span className="text-xs tracking-[0.2em] uppercase font-semibold">View Full Portfolio</span>
-          </Interactive>
-        </div>
-
-        <div className="border-t border-zinc-800">
-          {projectsData.map((project, idx) => (
-            <Interactive key={project.id} onClick={() => navigate('projects')}>
-              <div 
-                className="group flex flex-col md:flex-row justify-between items-start md:items-center py-10 md:py-16 border-b border-zinc-800 cursor-pointer relative"
-                onMouseEnter={() => setHoveredProject(project.image)}
-              >
-                {/* Hover Image Reveal for Mobile (Smoothly Animated) */}
-                <div className="md:hidden w-full overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] max-h-0 opacity-0 group-hover:max-h-[500px] group-hover:opacity-100 group-hover:mb-6 rounded-2xl">
-                  <img src={project.image} alt={project.title} className="w-full h-64 object-cover" />
-                </div>
-
-                <RevealText text={`0${idx + 1}`} className="text-sm tracking-[0.2em] text-zinc-600 mb-4 md:mb-0 md:w-24" />
-                
-                <div className="flex-1 flex flex-col md:flex-row md:items-center justify-between w-full">
-                  <h3 className="text-3xl md:text-5xl lg:text-6xl font-light tracking-tight transform group-hover:translate-x-4 transition-all duration-500 ease-out text-zinc-300 group-hover:text-white inline-block">{project.title}</h3>
-                  <div className="flex items-center gap-8 mt-4 md:mt-0 text-zinc-500 group-hover:text-zinc-300 transition-colors duration-500">
-                    <span className="text-[10px] md:text-xs tracking-widest uppercase font-semibold">{project.location}</span>
-                    <ArrowUpRight className="w-6 h-6 opacity-0 -translate-y-4 translate-x-4 group-hover:opacity-100 group-hover:translate-y-0 group-hover:translate-x-0 transition-all duration-500 ease-out hidden md:block" />
-                  </div>
-                </div>
-              </div>
-            </Interactive>
-          ))}
-        </div>
-        
-        {/* Floating Desktop Image Follower (Bulletproof Crossfade) */}
-        <div className="hidden md:block absolute top-1/2 right-0 -translate-y-1/2 w-[35vw] max-w-[500px] h-[60vh] max-h-[700px] pointer-events-none overflow-hidden rounded-3xl z-0 shadow-2xl">
-          {projectsData.map((proj) => (
-            <img 
-              key={proj.id}
-              src={proj.image} 
-              alt={proj.title} 
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ease-out ${hoveredProject === proj.image ? 'opacity-80' : 'opacity-0'}`}
-            />
-          ))}
-        </div>
-      </Section>
-
-      {/* Services Minimal */}
-      <Section className="bg-white">
-        <RevealText text="EXPERTISE" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-20" />
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-16">
-          {servicesData.map((service, idx) => (
-            <Interactive key={idx} onClick={() => navigate('services')} className="group cursor-pointer flex flex-col h-full">
-              <div className="w-full aspect-[4/5] md:h-[450px] overflow-hidden mb-8 bg-zinc-100 rounded-3xl shadow-sm">
-                <img src={service.image} className="w-full h-full object-cover grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 group-hover:scale-105 transition-all duration-[1.5s] ease-out" alt={service.title} />
-              </div>
-              <RevealText text={service.title} className="text-2xl font-light mb-4 text-zinc-950 border-b border-zinc-200 pb-4 flex justify-between items-center group-hover:border-zinc-950 transition-colors duration-500">
-                  {service.title}
-                  <ArrowRight className="w-4 h-4 opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-500" />
-              </RevealText>
-              <RevealText text={service.desc} delay={100} className="text-zinc-500 font-light leading-relaxed text-sm md:text-base" />
-            </Interactive>
-          ))}
-        </div>
-      </Section>
-
-      {/* Testimonial Section (Social Proof) */}
-      <Section className="bg-zinc-50 border-t border-zinc-200" innerClassName="flex flex-col items-center text-center">
-        <div className="max-w-5xl">
-          <RevealText text="CLIENT PERSPECTIVE" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-          <RevealText text="“Pillar Properties delivered our architectural build flawlessly. Their transparency regarding costs and absolute refusal to compromise on finish quality set them apart in the Auckland market.”" className="text-2xl md:text-4xl lg:text-5xl font-light text-zinc-950 leading-snug tracking-tight mb-12" delay={100} />
-          <div className="flex flex-col items-center">
-             <RevealText text="Sarah & James T." className="text-sm tracking-widest uppercase font-semibold text-zinc-950 mb-1" delay={200} />
-             <RevealText text="Epsom Custom Build" className="text-xs tracking-widest uppercase text-zinc-400" delay={300} />
-          </div>
-        </div>
-      </Section>
-
-      {/* Cinematic Video Teaser */}
-      <section className="py-12 md:py-24 px-[3%] bg-[#fafafa]">
-        <div className="max-w-[1600px] mx-auto relative h-[60vh] md:h-[80vh] overflow-hidden group rounded-[2rem] md:rounded-[3rem] bg-zinc-950 w-full shadow-lg">
-          <UnveilVideo 
-            src="https://cdn.coverr.co/videos/coverr-walking-through-a-modern-house-2525/1080p.mp4" 
-            className="absolute inset-0 w-full h-full opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-[3s] ease-out pointer-events-none"
-          />
-          <div className="absolute inset-0 flex items-center justify-center z-10">
-            <Interactive>
-              <button className="w-24 h-24 md:w-32 md:h-32 rounded-full border border-white/30 backdrop-blur-md flex flex-col items-center justify-center group-hover:bg-white text-white group-hover:text-zinc-950 transition-all duration-500 hover:scale-110">
-                <Play className="w-6 h-6 md:w-8 md:h-8 mb-1 ml-1" fill="currentColor" />
-                <span className="text-[10px] tracking-[0.2em] uppercase font-semibold mt-1">Play Reel</span>
-              </button>
-            </Interactive>
-          </div>
-          <div className="absolute bottom-10 left-6 md:left-12 z-10 pointer-events-none">
-            <RevealText text="THE PILLAR DIFFERENCE" className="text-xs tracking-[0.3em] uppercase text-white/70 font-semibold mb-3" />
-            <RevealText text="Watch our brand film." className="text-2xl md:text-3xl font-light text-white" delay={100} />
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ Accordion Section */}
-      <Section className="bg-white">
-        <div className="w-[90%] mx-auto">
-          <RevealText text="FREQUENTLY ASKED" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-          <div className="border-t border-zinc-200">
-            {faqData.map((faq, idx) => (
-              <Accordion 
-                key={idx} 
-                question={faq.q} 
-                answer={faq.a} 
-                isOpen={openFaqIndex === idx}
-                onClick={() => setOpenFaqIndex(openFaqIndex === idx ? null : idx)}
-              />
-            ))}
-          </div>
-        </div>
-      </Section>
-
-      {/* Insights / Journal Section */}
-      <Section className="bg-zinc-50 border-t border-zinc-200">
-        <div className="flex justify-between items-end mb-20">
-          <RevealText text="JOURNAL & INSIGHTS" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold" />
-          <Interactive className="hidden md:flex items-center gap-2 cursor-pointer text-zinc-950 hover:opacity-50 transition-opacity">
-            <span className="text-xs tracking-[0.2em] uppercase font-semibold">Read All</span>
-          </Interactive>
-        </div>
-        <div className="grid md:grid-cols-3 gap-12">
-          {insightsData.map((insight, idx) => (
-            <Interactive key={idx} className="group cursor-pointer border-t border-zinc-200 pt-8">
-              <div className="flex justify-between items-center mb-6">
-                <RevealText text={insight.category} delay={idx * 100} className="text-[10px] tracking-widest uppercase font-semibold text-zinc-400" />
-                <RevealText text={insight.date} delay={idx * 100 + 50} className="text-[10px] tracking-widest uppercase font-semibold text-zinc-400" />
-              </div>
-              <RevealText text={insight.title} delay={idx * 100 + 100} className="text-2xl font-light text-zinc-950 group-hover:text-zinc-500 transition-colors duration-500 pr-8" />
-            </Interactive>
-          ))}
-        </div>
-      </Section>
-
-      {/* NEW: Partner / Press Section */}
-      <Section className="bg-white border-t border-zinc-200 text-center" noVerticalPadding>
-         <div className="py-24 md:py-32">
-            <RevealText text="AS FEATURED IN" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-12" />
-            <div className="flex flex-wrap justify-center items-center gap-12 md:gap-24 opacity-50 grayscale">
-                <span className="text-2xl md:text-3xl font-bold tracking-tighter">ArchDigest</span>
-                <span className="text-2xl md:text-3xl font-serif italic">Home & Garden</span>
-                <span className="text-2xl md:text-3xl font-light uppercase tracking-widest">Dwell</span>
-                <span className="text-2xl md:text-3xl font-black tracking-tight">VOGUE<span className="font-light">LIVING</span></span>
-            </div>
-         </div>
-      </Section>
-
-      {/* Massive CTA Section */}
-      <Section className="bg-[#fafafa] border-t border-zinc-200" innerClassName="flex flex-col items-center text-center">
-        <RevealText text="START YOUR PROJECT" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-        <Interactive onClick={() => navigate('contact')}>
-          <h2 className="text-6xl md:text-8xl lg:text-[10vw] font-light tracking-tighter cursor-pointer hover:opacity-50 transition-opacity duration-500 text-zinc-950 mb-12 leading-none">
-            Let's Talk.
-          </h2>
-        </Interactive>
-        <p className="text-zinc-500 text-lg md:text-xl font-light max-w-md">Schedule a complimentary consultation to discuss your land, vision, or investment strategy.</p>
-      </Section>
-    </div>
+const Badge = ({ children, variant = 'default', className = '' }) => {
+  const variants = {
+    default: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+    success: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    warning: 'bg-amber-50 text-amber-700 border-amber-200',
+    danger: 'bg-rose-50 text-rose-700 border-rose-200',
+    info: 'bg-blue-50 text-blue-700 border-blue-200',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border ${variants[variant]} ${className}`}>
+      {children}
+    </span>
   );
 };
 
-const AboutPage = () => (
-  <div className="animate-in fade-in duration-1000 bg-white min-h-screen pt-32 md:pt-48 pb-32">
-    <Section noVerticalPadding>
-      <RevealText text="OUR STORY" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-      <RevealText text="Building foundations" className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950" />
-      <RevealText text="for the future." className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950 mb-24" delay={100} />
-
-      <div className="grid lg:grid-cols-2 gap-16 items-start mb-32">
-        <div>
-          <RevealText text="Pillar Properties Ltd is a premier residential development and construction company based in the heart of Auckland." className="text-2xl font-light text-zinc-950 leading-relaxed mb-8" />
-          <RevealText text="While our brand name is new to the market, the foundation of our company is built on extensive industry experience. For over seven years, our dedicated team has been instrumental in delivering more than 600 homes across the region." className="text-lg text-zinc-500 font-light leading-relaxed mb-8" delay={100} />
-          <RevealText text="We don't just build houses; we design, develop, build, and manage high-quality homes that cater to modern lifestyles. Our core philosophy ensures that every project we undertake is functional, aesthetically pleasing, and above all, affordable without compromising on the premium feel." className="text-lg text-zinc-500 font-light leading-relaxed" delay={200} />
-        </div>
-        <div className="w-full h-[400px] md:h-[600px] rounded-3xl overflow-hidden shadow-sm">
-          <UnveilImage src="https://images.unsplash.com/photo-1503387762-592deb58ef4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" alt="Architectural Structure" className="w-full h-full object-cover" />
-        </div>
-      </div>
-
-      <RevealText text="CORE PHILOSOPHY" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-      <div className="grid md:grid-cols-3 gap-12 border-t border-zinc-200 pt-16">
-        {valuesData.map((val, idx) => (
-          <div key={idx}>
-            <RevealText text={val.num} className="text-4xl font-thin text-zinc-300 mb-6" />
-            <RevealText text={val.title} className="text-2xl font-light text-zinc-950 mb-4" />
-            <RevealText text={val.desc} className="text-zinc-500 font-light leading-relaxed" />
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-40">
-        <RevealText text="LEADERSHIP" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-        <div className="grid md:grid-cols-3 gap-12 border-t border-zinc-200 pt-16">
-          {teamData.map((member, idx) => (
-            <Interactive key={idx} className="group">
-              <div className="w-full aspect-[3/4] overflow-hidden mb-6 bg-zinc-100 rounded-3xl shadow-sm">
-                <img src={member.image} alt={member.name} className="w-full h-full object-cover grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700 ease-out" />
-              </div>
-              <RevealText text={member.name} className="text-2xl font-light text-zinc-950 mb-1" />
-              <RevealText text={member.role} className="text-xs tracking-widest uppercase text-zinc-400 font-semibold" delay={100} />
-            </Interactive>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-40">
-        <RevealText text="MILESTONES" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-        <div className="border-t border-zinc-200 pt-16 space-y-16">
-          {milestonesData.map((milestone, idx) => (
-            <div key={idx} className="grid md:grid-cols-4 gap-8 md:gap-12 items-start group">
-              <RevealText text={milestone.year} className="text-4xl md:text-5xl font-thin text-zinc-300 group-hover:text-zinc-950 transition-colors duration-500" />
-              <div className="md:col-span-3 border-l border-zinc-200 pl-8 md:pl-12">
-                <RevealText text={milestone.title} className="text-2xl font-light text-zinc-950 mb-4" />
-                <RevealText text={milestone.desc} className="text-zinc-500 font-light leading-relaxed max-w-2xl" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-40">
-        <RevealText text="RECOGNITION" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-        <div className="grid md:grid-cols-3 gap-8 border-t border-zinc-200 pt-16">
-          {awardsData.map((award, idx) => (
-            <div key={idx} className="bg-[#fafafa] p-8 md:p-12 rounded-3xl border border-zinc-100 hover:border-zinc-300 transition-colors duration-500">
-              <RevealText text={award.year} className="text-xs tracking-[0.2em] uppercase text-zinc-400 font-semibold mb-6" />
-              <RevealText text={award.title} className="text-xl md:text-2xl font-light text-zinc-950 mb-4" />
-              <RevealText text={award.category} className="text-sm text-zinc-500 font-light" />
-            </div>
-          ))}
-        </div>
-      </div>
-    </Section>
-
-    <Section className="bg-zinc-950 text-white mt-32 md:mt-40 rounded-[2rem] md:rounded-[3rem] shadow-xl mx-4 md:mx-12 lg:mx-16" innerClassName="flex flex-col md:flex-row gap-16 items-center">
-      <div className="w-full md:w-1/2">
-        <RevealText text="SUSTAINABILITY" className="text-xs tracking-[0.3em] uppercase text-zinc-500 font-semibold mb-8" />
-        <RevealText text="Building for the next century." className="text-4xl md:text-6xl font-light tracking-tight mb-8 text-zinc-200" />
-        <RevealText text="Our commitment extends beyond aesthetics. We integrate passive heating, solar readiness, and ethically sourced timber into our standard specifications, ensuring a minimal footprint and maximum efficiency." className="text-lg text-zinc-400 font-light leading-relaxed mb-8" delay={100} />
-      </div>
-      <div className="w-full md:w-1/2 h-[400px] rounded-3xl overflow-hidden">
-          <UnveilImage src="https://images.unsplash.com/photo-1518780664697-55e3ad937233?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" alt="Sustainable details" className="w-full h-full object-cover opacity-80" />
-      </div>
-    </Section>
-
-    {/* NEW: Culture & Community */}
-    <Section className="bg-white mt-32 md:mt-40">
-      <RevealText text="CULTURE" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-      <div className="grid md:grid-cols-2 gap-16 items-center">
-        <div className="order-2 md:order-1 h-[400px] md:h-[500px] rounded-3xl overflow-hidden shadow-sm">
-           <UnveilImage src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" alt="Team Culture" className="w-full h-full object-cover" />
-        </div>
-        <div className="order-1 md:order-2">
-          <RevealText text="Beyond the blueprint." className="text-4xl md:text-6xl font-light tracking-tight text-zinc-950 mb-8" />
-          <RevealText text="We foster a collaborative environment where architects, project managers, and builders work side-by-side. Our commitment extends to the local Auckland community through active sponsorship of sustainable design initiatives and youth trade apprenticeships." className="text-lg text-zinc-500 font-light leading-relaxed" />
-        </div>
-      </div>
-    </Section>
-
-    <Section className="bg-[#fafafa] border-t border-zinc-200 mt-32 md:mt-40 text-center" innerClassName="flex flex-col items-center">
-        <RevealText text="CAREERS" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-        <RevealText text="Build with us." className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950 mb-8" />
-        <RevealText text="We are always looking for visionary architects, rigorous project managers, and master builders to join our growing team." className="text-xl text-zinc-500 font-light max-w-2xl leading-relaxed mb-12" delay={100} />
-        <Interactive>
-          <button className="bg-zinc-950 text-white px-8 py-4 text-xs tracking-[0.2em] uppercase font-semibold rounded-full hover:bg-zinc-800 transition-colors flex items-center gap-2">
-            View Open Positions <ArrowRight className="w-4 h-4" />
-          </button>
-        </Interactive>
-    </Section>
+const PageHeader = ({ title, description, action }) => (
+  <div className="flex flex-col md:flex-row gap-6 justify-between items-start md:items-center bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm mb-8">
+    <div>
+      <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2">{title}</h2>
+      {description && <div className="text-sm text-zinc-500 mt-2 leading-relaxed max-w-2xl">{description}</div>}
+    </div>
+    {action && <div className="flex gap-3 shrink-0">{action}</div>}
   </div>
 );
 
-const ServicesPage = () => (
-  <div className="animate-in fade-in duration-1000 bg-[#fafafa] min-h-screen pt-32 md:pt-48 pb-32">
-    <Section noVerticalPadding>
-      <RevealText text="OUR EXPERTISE" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-      <RevealText text="End-to-end" className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950" />
-      <RevealText text="development." className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950 mb-32" delay={100} />
-
-      <div className="space-y-32">
-        {servicesData.map((service, idx) => (
-          <div key={idx} className={`flex flex-col ${idx % 2 === 1 ? 'lg:flex-row-reverse' : 'lg:flex-row'} items-center gap-16 lg:gap-24`}>
-            <div className="w-full lg:w-1/2 h-[400px] md:h-[500px] rounded-3xl overflow-hidden shadow-sm">
-              <UnveilImage src={service.image} alt={service.title} className="w-full h-full object-cover" />
-            </div>
-            <div className="w-full lg:w-1/2">
-              <RevealText text={`0${idx + 1}`} className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-6" />
-              <RevealText text={service.title} className="text-4xl md:text-5xl font-light text-zinc-950 mb-6" />
-              <RevealText text={service.desc} className="text-xl text-zinc-500 font-light leading-relaxed mb-8" />
-              <ul className="space-y-4 border-t border-zinc-200 pt-8">
-                {service.features?.map((item, i) => (
-                   <li key={i} className="flex items-center text-zinc-600 font-light">
-                      <span className="w-1.5 h-1.5 bg-zinc-950 rounded-full mr-4"></span>
-                      <RevealText text={item} delay={i * 50} />
-                   </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-40 border-t border-zinc-200 pt-32">
-        <RevealText text="THE PILLAR ADVANTAGE" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-        <div className="grid md:grid-cols-2 gap-24">
-          <div>
-             <RevealText text="Why partner with us." className="text-4xl md:text-6xl font-light tracking-tight text-zinc-950 mb-8" />
-             <RevealText text="We eliminate the friction typically associated with property development. By consolidating design, consent, and construction under one roof, we drastically reduce timelines and mitigate financial risk." className="text-xl text-zinc-500 font-light leading-relaxed" delay={100} />
-          </div>
-          <div className="space-y-12">
-            {[
-              { label: 'Single Point of Contact', desc: 'No more juggling architects, engineers, and builders.' },
-              { label: 'Fixed Price Certainty', desc: 'Comprehensive scoping means no unexpected variations.' },
-              { label: 'Speed to Market', desc: 'Parallel processing of consents and procurement saves months.' }
-            ].map((adv, idx) => (
-              <div key={idx} className="border-b border-zinc-200 pb-8">
-                <RevealText text={adv.label} className="text-2xl font-light text-zinc-950 mb-2" delay={idx * 100} />
-                <RevealText text={adv.desc} className="text-zinc-500 font-light" delay={idx * 100 + 50} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* NEW: Featured Case Study */}
-      <div className="mt-40 border-t border-zinc-200 pt-32">
-        <RevealText text="CASE STUDY" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-        <div className="bg-zinc-950 rounded-3xl overflow-hidden text-white flex flex-col md:flex-row shadow-xl">
-          <div className="w-full md:w-1/2 p-12 md:p-16 lg:p-24 flex flex-col justify-center">
-             <RevealText text="The Epsom Transformation" className="text-3xl md:text-5xl font-light tracking-tight mb-6" />
-             <RevealText text="How we took a subdivided 400sqm site and delivered a multi-award winning luxury family home within a strict 9-month timeframe, completely managing the resource consent process." className="text-zinc-400 font-light leading-relaxed mb-8" delay={100} />
-             <Interactive>
-               <button className="flex items-center gap-2 text-xs tracking-widest uppercase font-semibold hover:text-zinc-300 transition-colors">
-                 Read Full Study <ArrowRight className="w-4 h-4" />
-               </button>
-             </Interactive>
-          </div>
-          <div className="w-full md:w-1/2 h-[400px] md:h-auto relative group">
-             <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80" alt="Case Study" className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-[2s] ease-out" />
-          </div>
-        </div>
-      </div>
-    </Section>
-
-    <Section className="bg-zinc-50 border-t border-zinc-200 mt-32 md:mt-40 text-center">
-      <RevealText text="OUR PARTNERS" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16 text-center" />
-      <div className="grid md:grid-cols-3 gap-12 text-center">
-        {[
-          { title: 'Private Homebuyers', desc: 'Families looking for bespoke, architectural standalone homes.' },
-          { title: 'Property Investors', desc: 'Individuals seeking high-yield, low-maintenance townhouses.' },
-          { title: 'Landowners', desc: 'Owners looking to unlock the equity in their land via subdivision.' }
-        ].map((type, idx) => (
-            <div key={idx}>
-              <RevealText text={type.title} className="text-2xl font-light text-zinc-950 mb-4" />
-              <RevealText text={type.desc} className="text-zinc-500 font-light leading-relaxed" />
-            </div>
-        ))}
-      </div>
-    </Section>
+const LoadingSpinner = () => (
+  <div className="w-full h-64 flex flex-col items-center justify-center text-zinc-400">
+    <RefreshCw className="animate-spin mb-4" size={24} />
+    <span className="text-sm font-medium">Fetching enterprise data records...</span>
   </div>
 );
 
-const ProjectsPage = () => (
-  <div className="animate-in fade-in duration-1000 bg-[#fafafa] min-h-screen pt-32 md:pt-48 pb-32">
-    <Section noVerticalPadding>
-      <RevealText text="PORTFOLIO" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-      <RevealText text="Selected Works." className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950 mb-24" />
-
-      <div className="grid md:grid-cols-2 gap-x-12 gap-y-24">
-        {projectsData.map((project, idx) => (
-          <Interactive key={project.id} className="group cursor-pointer">
-            <div className={`w-full ${idx % 2 === 1 ? 'md:mt-32' : ''}`}>
-              <UnveilImage src={project.image} alt={project.title} className="w-full aspect-[4/5] md:aspect-[3/4] mb-8 rounded-3xl shadow-sm" />
-              <div className="flex justify-between items-start border-t border-zinc-200 pt-6">
-                <div>
-                  <h3 className="text-2xl font-light text-zinc-950 mb-2">{project.title}</h3>
-                  <p className="text-zinc-500 text-sm">{project.location}</p>
-                </div>
-                <span className="text-xs tracking-widest uppercase text-zinc-400 font-semibold">{project.status}</span>
-              </div>
-            </div>
-          </Interactive>
-        ))}
-      </div>
-
-      <div className="mt-40 pt-32 border-t border-zinc-200">
-        <RevealText text="ON THE HORIZON" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-        <RevealText text="Future Developments." className="text-4xl md:text-6xl font-light tracking-tight text-zinc-950 mb-16" />
-        
-        <div className="flex flex-col">
-          {futureProjectsData.map((proj, idx) => (
-            <div key={idx} className="group flex flex-col md:flex-row justify-between items-start md:items-center py-8 border-b border-zinc-200 hover:bg-zinc-50 transition-colors px-4 -mx-4 cursor-default">
-              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-12 w-full">
-                <RevealText text={proj.title} delay={idx * 50} className="text-2xl md:text-3xl font-light text-zinc-950" />
-                <RevealText text={proj.location} delay={idx * 50 + 50} className="text-sm tracking-widest uppercase text-zinc-500 font-semibold" />
-              </div>
-              <div className="mt-4 md:mt-0 flex-shrink-0">
-                <RevealText text={`Expected ${proj.expected}`} delay={idx * 50 + 100} className="text-xs tracking-[0.2em] uppercase text-zinc-400 font-semibold bg-white border border-zinc-200 px-4 py-2 rounded-full" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* NEW: Project Statistics / Impact */}
-      <div className="mt-40 pt-32 border-t border-zinc-200">
-         <RevealText text="OUR IMPACT" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-         <div className="grid md:grid-cols-4 gap-12 bg-zinc-950 rounded-3xl p-12 lg:p-16 text-white shadow-xl">
-            {[
-              { val: '$200M+', label: 'Gross Development Value' },
-              { val: '600+', label: 'Dwellings Completed' },
-              { val: '12', label: 'Suburbs Transformed' },
-              { val: '100%', label: 'Delivery Rate' }
-            ].map((stat, idx) => (
-              <div key={idx} className="flex flex-col">
-                <RevealText text={stat.val} delay={idx * 100} className="text-4xl md:text-5xl lg:text-6xl font-light text-zinc-200 mb-4" />
-                <RevealText text={stat.label} delay={idx * 100 + 50} className="text-[10px] md:text-xs tracking-[0.2em] uppercase text-zinc-500 font-semibold" />
-              </div>
-            ))}
-         </div>
-      </div>
-    </Section>
-  </div>
-);
-
-const GalleryPage = () => (
-  <div className="animate-in fade-in duration-1000 bg-[#fafafa] min-h-screen pt-32 md:pt-48 pb-32">
-    <Section noVerticalPadding>
-      <RevealText text="GALLERY" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-      <RevealText text="Visual Archive." className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950 mb-24" />
-
-      <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
-        {galleryData.map((src, idx) => (
-          <Interactive key={idx} className="break-inside-avoid relative group overflow-hidden block rounded-2xl md:rounded-3xl bg-zinc-200 shadow-sm">
-            <UnveilImage src={src} alt={`Gallery Image ${idx + 1}`} className="w-full h-auto object-cover transition-transform duration-[2.5s] group-hover:scale-105 ease-[cubic-bezier(0.16,1,0.3,1)]" />
-            <div className="absolute inset-0 bg-zinc-950/0 group-hover:bg-zinc-950/30 transition-colors duration-500 flex items-center justify-center">
-              <Plus className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-all duration-500 transform scale-50 group-hover:scale-100" strokeWidth={1} />
-            </div>
-          </Interactive>
-        ))}
-      </div>
-
-      {/* NEW: Motion / Cinematic */}
-      <div className="mt-40 pt-32 border-t border-zinc-200">
-        <RevealText text="IN MOTION" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16" />
-        <div className="w-full aspect-video md:h-[700px] rounded-3xl overflow-hidden relative group bg-zinc-950 shadow-sm">
-           <UnveilVideo 
-             src="https://cdn.coverr.co/videos/coverr-walking-through-a-modern-house-2525/1080p.mp4" 
-             className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-1000"
-           />
-           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 transition-transform duration-500 group-hover:scale-110">
-                 <Play className="w-8 h-8 text-white ml-1" fill="currentColor" />
-              </div>
-           </div>
-        </div>
-      </div>
-    </Section>
-  </div>
-);
+const NavItem = ({ icon, label, isActive, onClick, disabled }) => {
+  if (disabled) return null; 
   
-const ContactPage = () => {
-  // AI State
-  const [aiInput, setAiInput] = useState('');
-  const [aiOutput, setAiOutput] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [enquiryMessage, setEnquiryMessage] = useState('');
-  const [activeTab, setActiveTab] = useState('direct');
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium text-sm ${
+        isActive ? 'bg-zinc-800/80 text-white shadow-sm ring-1 ring-zinc-700' : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-white'
+      }`}
+    >
+      {icon}<span>{label}</span>
+    </button>
+  );
+};
 
-  const handleGenerate = async () => {
-    if (!aiInput.trim()) return;
+function ComplexTooltip({ text }) {
+  return (
+    <span className="relative inline-flex items-center group cursor-help ml-1.5 align-text-bottom z-50">
+      <span className="w-3.5 h-3.5 rounded-full bg-zinc-200/80 border border-zinc-300 flex items-center justify-center text-zinc-500 hover:bg-zinc-800 hover:text-white transition-all shadow-sm">
+        <Info size={10} strokeWidth={3} />
+      </span>
+      <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-80 p-3 bg-zinc-950 text-zinc-400 text-xs rounded-xl shadow-2xl border border-zinc-800 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none font-medium leading-relaxed text-left block">
+        <span className="font-mono text-[9px] text-emerald-400 mb-1.5 border-b border-zinc-800 pb-1.5 flex items-center gap-1.5 uppercase tracking-widest block">
+          <Activity size={10} className="inline-block" /> System Tooltip
+        </span>
+        <span className="block">{text}</span>
+        <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-zinc-950 block"></span>
+      </span>
+    </span>
+  );
+}
+
+function AccessDenied() {
+  return (
+    <div className="py-20 text-center bg-rose-50 border border-rose-200 rounded-xl max-w-2xl mx-auto mt-10">
+      <AlertCircle size={40} className="mx-auto text-rose-500 mb-4" />
+      <h3 className="text-xl font-bold text-rose-900 mb-2">Access Denied</h3>
+      <p className="text-sm text-rose-700">Your current role permissions do not allow you to view this module.</p>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// 5. FEATURE MODULES (WITH RBAC ADAPTATIONS)
+// ============================================================================
+
+function DashboardFeature() {
+  const { user, useServerQuery } = useApp();
+  const { data: portfolioData, loading: portLoading } = useServerQuery('portfolio');
+  const { data: regionalData, loading: regLoading } = useServerQuery('regional');
+  const { data: logs, loading: logsLoading } = useServerQuery('auditLogs');
+  const { data: supplierRisk, loading: riskLoading } = useServerQuery('supplierRisk');
+  const { data: reports, loading: repLoading } = useServerQuery('reports');
+  const { data: bomData, loading: bomLoading } = useServerQuery('thermostatBom');
+  
+  const [insightText, setInsightText] = useState("Awaiting inference payload from AI backend cluster...");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    if(!portLoading && portfolioData && user.role === 'sustainability_manager') handleGenerateInsight();
+  }, [portLoading, user.role]);
+
+  const handleGenerateInsight = async () => {
     setIsGenerating(true);
-    setAiOutput('');
-    const result = await generateAIBrief(aiInput);
-    setAiOutput(result);
+    const prompt = `Target: 350 tCO2e. Actual: 385 tCO2e. Top Hotspot: Virgin PC/ABS Housing. Write a 3-sentence insight.`;
+    const result = await ServerServices.AI.generateInsight(prompt, user);
+    setInsightText(result);
     setIsGenerating(false);
   };
 
-  const attachToEnquiry = () => {
-    setEnquiryMessage(`AI GENERATED BRIEF:\n${aiOutput}\n\nADDITIONAL NOTES:\n`);
-    setActiveTab('direct');
+  if (portLoading || regLoading || logsLoading || riskLoading || repLoading || bomLoading) return <LoadingSpinner />;
+
+  // --------------------------------------------------------
+  // DASHBOARD VARIANT: PROCUREMENT MANAGER
+  // --------------------------------------------------------
+  if (user.role === 'procurement') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <PageHeader title="Supply Chain Intelligence" description="Monitor supplier risk, data quality, and compliance readiness." />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Users size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Active Suppliers</h4><span className="text-3xl font-extrabold">284</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-rose-50 text-rose-600 rounded-lg"><AlertTriangle size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">High Risk Entities</h4><span className="text-3xl font-extrabold text-rose-600">12</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><CheckCircle size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Avg. ESG Score</h4><span className="text-3xl font-extrabold text-emerald-600">B+</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><ShieldCheck size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Primary Data</h4><span className="text-3xl font-extrabold text-amber-600">35%</span></div>
+          </Card>
+        </div>
+        <Card title="Supplier Risk Matrix">
+          <div className="h-[350px]">
+             <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis type="number" dataKey="risk" name="Data Risk (%)" tick={{fill: '#a1a1aa'}} label={{ value: 'Data Inaccuracy Risk', position: 'bottom', fill: '#a1a1aa', fontSize: 12 }} />
+                <YAxis type="number" dataKey="emissions" name="Emissions (tCO2e)" tick={{fill: '#a1a1aa'}} />
+                <Tooltip cursor={{strokeDasharray: '3 3'}} contentStyle={{ borderRadius: '12px' }} />
+                <Scatter name="Suppliers" data={supplierRisk} fill="#18181b">
+                  {supplierRisk.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.risk > 50 ? '#f43f5e' : entry.risk > 30 ? '#f59e0b' : '#10b981'} />)}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------
+  // DASHBOARD VARIANT: EXECUTIVE (CSO)
+  // --------------------------------------------------------
+  if (user.role === 'executive') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <PageHeader title="Executive Overview" description="Corporate Net Zero trajectory and financial impact of ESG initiatives." />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-zinc-100 text-zinc-600 rounded-lg"><Globe size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Net Zero Delta</h4><span className="text-3xl font-extrabold text-rose-600">+1.2% <span className="text-sm font-medium">Off Target</span></span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><DollarSign size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Initiative ROI</h4><span className="text-3xl font-extrabold text-emerald-600">$1.2M <span className="text-sm font-medium">Saved</span></span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Shield size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Compliance Score</h4><span className="text-3xl font-extrabold text-blue-600">98%</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><Target size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Active Projects</h4><span className="text-3xl font-extrabold">14</span></div>
+          </Card>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card title="Portfolio Emissions Trajectory">
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={portfolioData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#a1a1aa'}} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#a1a1aa'}} />
+                  <Tooltip contentStyle={{ borderRadius: '12px' }} />
+                  <Area type="monotone" dataKey="baseline" stroke="#d4d4d8" fill="transparent" strokeDasharray="4 4" strokeWidth={2} />
+                  <Line type="monotone" dataKey="actual" stroke="#18181b" strokeWidth={3} />
+                  <Line type="monotone" dataKey="target" stroke="#10b981" strokeWidth={3} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+          <Card title="Regional Target Attainment">
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={regionalData} layout="vertical" margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f4f4f5" />
+                  <XAxis type="number" axisLine={false} tickLine={false} tick={{fill: '#a1a1aa', fontSize: 12}} />
+                  <YAxis dataKey="region" type="category" axisLine={false} tickLine={false} tick={{fill: '#52525b', fontSize: 12, fontWeight: 500}} width={80} />
+                  <Tooltip cursor={{fill: '#f4f4f5'}} contentStyle={{ borderRadius: '12px' }} />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px', fontSize: '12px' }} />
+                  <Bar dataKey="target" name="Target" fill="#d4d4d8" radius={[0, 4, 4, 0]} barSize={12} />
+                  <Bar dataKey="emissions" name="Actual" fill="#10b981" radius={[0, 4, 4, 0]} barSize={12}>
+                    {regionalData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.emissions > entry.target ? '#f43f5e' : '#10b981'} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------
+  // DASHBOARD VARIANT: PRODUCT MANAGER
+  // --------------------------------------------------------
+  if (user.role === 'product_manager') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <PageHeader title="Product Lifecycle Analytics" description="Manage BOM emissions, scenario modeling, and materials impact." />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Package size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">SKUs Modeled</h4><span className="text-3xl font-extrabold">142</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><CheckSquare size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Verified LCA</h4><span className="text-3xl font-extrabold text-emerald-600">89%</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><Layers size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Scenarios Run</h4><span className="text-3xl font-extrabold text-purple-600">1.4k</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><AlertTriangle size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">High Impact Mats</h4><span className="text-3xl font-extrabold text-amber-600">12</span></div>
+          </Card>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card title="Material Hotspots Breakdown">
+            <div className="h-[300px]">
+               <ResponsiveContainer width="100%" height="100%">
+                 <PieChart>
+                   <Pie data={MOCK_DB.hotspots.topDrivers} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={2} dataKey="emissions" stroke="none">
+                     {MOCK_DB.hotspots.topDrivers.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.category === 'Material' ? '#18181b' : entry.category === 'Logistics' ? '#f59e0b' : '#3b82f6'} />)}
+                   </Pie>
+                   <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                 </PieChart>
+               </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------
+  // DASHBOARD VARIANT: AUDITOR
+  // --------------------------------------------------------
+  if (user.role === 'auditor') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <PageHeader title="Compliance & Audit Overview" description="System integrity, report generation history, and immutable event logs." />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-zinc-100 text-zinc-600 rounded-lg"><History size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Audit Events (30d)</h4><span className="text-3xl font-extrabold">12.4k</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><Database size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Verifiable Nodes</h4><span className="text-3xl font-extrabold text-emerald-600">4,291</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><FileText size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Reports Generated</h4><span className="text-3xl font-extrabold text-blue-600">{reports?.length || 0}</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-rose-50 text-rose-600 rounded-lg"><Shield size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Failed Jobs</h4><span className="text-3xl font-extrabold text-rose-600">1</span></div>
+          </Card>
+        </div>
+        <Card title="Recent System Activity (Immutable)">
+          <div className="divide-y divide-zinc-100 overflow-y-auto max-h-[300px] custom-scrollbar">
+            {logs.map((log) => (
+              <div key={log.id} className="py-3 flex items-center justify-between hover:bg-zinc-50 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-500">
+                    <Fingerprint size={14}/>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-zinc-900">{log.action.replace(/_/g, ' ')}</p>
+                    <p className="text-xs font-medium text-zinc-500">{log.resource} • by {log.actor}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <Badge variant={log.status === 'SUCCESS' ? 'success' : 'danger'}>{log.status}</Badge>
+                  <div className="text-[10px] font-mono text-zinc-400 mt-1">{new Date(log.timestamp).toLocaleTimeString()}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------
+  // DASHBOARD VARIANT: SYSTEM ADMIN
+  // --------------------------------------------------------
+  if (user.role === 'admin') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <PageHeader title="System Operations" description="Platform health, integration status, and tenant configuration." />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><Activity size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">System Status</h4><span className="text-3xl font-extrabold text-emerald-600">Healthy</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Layers size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Active Integrations</h4><span className="text-3xl font-extrabold">2</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><Database size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Data Ingested (30d)</h4><span className="text-3xl font-extrabold">1.4 TB</span></div>
+          </Card>
+          <Card className="!p-6 flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4"><div className="p-2 bg-zinc-100 text-zinc-600 rounded-lg"><Users size={20}/></div></div>
+            <div><h4 className="text-sm font-semibold text-zinc-500 mb-1">Active Personas</h4><span className="text-3xl font-extrabold">6</span></div>
+          </Card>
+        </div>
+        <Card title="Integration Health">
+          <div className="space-y-4">
+             <div className="flex justify-between items-center p-4 border border-zinc-200 rounded-xl bg-zinc-50">
+               <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 bg-blue-100 text-blue-700 font-black rounded-lg flex items-center justify-center">SAP</div>
+                 <div><h4 className="font-bold">SAP S/4HANA</h4><p className="text-xs text-zinc-500">Connected • Syncing real-time</p></div>
+               </div>
+               <Badge variant="success">Online</Badge>
+             </div>
+             <div className="flex justify-between items-center p-4 border border-zinc-200 rounded-xl bg-zinc-50">
+               <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 bg-zinc-900 text-white font-black rounded-lg flex items-center justify-center">eI</div>
+                 <div><h4 className="font-bold">Ecoinvent v3.9</h4><p className="text-xs text-zinc-500">Connected • API Key Valid</p></div>
+               </div>
+               <Badge variant="success">Online</Badge>
+             </div>
+             <div className="flex justify-between items-center p-4 border border-rose-200 rounded-xl bg-rose-50">
+               <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 bg-rose-100 text-rose-700 font-black rounded-lg flex items-center justify-center">OR</div>
+                 <div><h4 className="font-bold text-rose-900">Oracle NetSuite</h4><p className="text-xs text-rose-700">Webhook Invocation Failed</p></div>
+               </div>
+               <Badge variant="danger">Error</Badge>
+             </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------
+  // DASHBOARD VARIANT: SUSTAINABILITY MANAGER (DEFAULT/FALLBACK)
+  // --------------------------------------------------------
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card className="!p-6"><h4 className="text-sm text-zinc-500 mb-2">Total Scope 3</h4><span className="text-4xl font-extrabold">4,250 <span className="text-sm text-zinc-400">tCO₂e</span></span></Card>
+        <Card className="!p-6"><h4 className="text-sm text-zinc-500 mb-2">Products Modeled</h4><span className="text-4xl font-extrabold">142 <span className="text-sm text-zinc-400">SKUs</span></span></Card>
+        <Card className="!p-6"><h4 className="text-sm text-zinc-500 mb-2">Avg. Footprint</h4><span className="text-4xl font-extrabold">29.9 <span className="text-sm text-zinc-400">kgCO₂e</span></span></Card>
+        <Card className="!p-6"><h4 className="text-sm text-zinc-500 mb-2">Primary Data Coverage</h4><span className="text-4xl font-extrabold">35 <span className="text-sm text-zinc-400">%</span></span></Card>
+      </div>
+
+      <div className="bg-gradient-to-r from-emerald-50/80 to-teal-50/50 border border-emerald-100 rounded-2xl p-6 shadow-sm flex gap-5 items-start">
+        <div className="w-12 h-12 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center shrink-0 shadow-sm">
+          <Server className="text-emerald-600" size={24} strokeWidth={2} />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-base font-bold text-zinc-900 mb-1 flex items-center gap-2">
+            Enterprise AI Diagnostics
+            <Badge variant="success" className="!text-[10px]">Secure Backend Request</Badge>
+          </h3>
+          <p className="text-sm text-zinc-700 leading-relaxed max-w-4xl min-h-[60px] font-medium">
+            {isGenerating ? (
+              <span className="flex items-center gap-2 text-emerald-600">
+                <RefreshCw size={16} className="animate-spin" /> Querying secure Gemini inference cluster...
+              </span>
+            ) : insightText}
+          </p>
+        </div>
+      </div>
+
+      <Card>
+        <h3 className="text-lg font-bold mb-6">Emissions Trajectory</h3>
+        <div className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={portfolioData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#a1a1aa'}} dy={10} />
+              <YAxis axisLine={false} tickLine={false} tick={{fill: '#a1a1aa'}} />
+              <Tooltip contentStyle={{ borderRadius: '12px' }} />
+              <Area type="monotone" dataKey="actual" stroke="#18181b" fill="#18181b" fillOpacity={0.05} strokeWidth={3} />
+              <Line type="monotone" dataKey="target" stroke="#10b981" strokeWidth={2} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ProductsFeature() {
+  const { useServerQuery } = useApp();
+  const { data: bomData, loading } = useServerQuery('thermostatBom');
+  const [scenario, setScenario] = useState('baseline');
+
+  const ASSEMBLY_PLANT = { name: 'Austin Facility', location: [30.2672, -97.7431], energyFactor: 0.4, energyPerUnit: 5 };
+
+  if (loading) return <LoadingSpinner />;
+  const result = EmissionsService.calculateProductFootprint(bomData, ASSEMBLY_PLANT, scenario);
+
+  const lifecycleData = [
+    { name: 'Raw Materials', value: 65, fill: '#18181b' },
+    { name: 'Manufacturing', value: 20, fill: '#52525b' },
+    { name: 'Logistics', value: 10, fill: '#f59e0b' },
+    { name: 'End of Life', value: 5, fill: '#a1a1aa' }
+  ];
+
+  return (
+    <div className="space-y-6 animate-in fade-in">
+      
+      {/* Top Header */}
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+        <div>
+          <Badge variant="success" className="mb-2"><CheckCircle size={12}/> Verified BOM Model</Badge>
+          <h2 className="text-2xl font-bold text-zinc-900">Smart Thermostat v2</h2>
+        </div>
+        <div className="flex gap-2 p-1 bg-zinc-100 rounded-lg">
+          <button onClick={() => setScenario('baseline')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${scenario === 'baseline' ? 'bg-white shadow text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}>Baseline</button>
+          <button onClick={() => setScenario('local-recycled')} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${scenario !== 'baseline' ? 'bg-white shadow text-emerald-700' : 'text-zinc-500 hover:text-zinc-700'}`}>Local + Recycled</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        
+        {/* KPI Column */}
+        <div className="xl:col-span-1 space-y-6">
+          <Card className="text-center items-center justify-center !py-10">
+            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-4">Total Cradle-to-Gate</h3>
+            <span className="text-6xl font-black text-zinc-900">{result.total} <span className="text-xl text-zinc-400 font-bold">kg</span></span>
+            
+            {scenario !== 'baseline' ? (
+              <div className="mt-4 inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-sm font-bold px-4 py-1.5 rounded-full ring-1 ring-emerald-200">
+                <TrendingDown size={16} /> 12% reduction applied
+              </div>
+            ) : <div className="mt-4 h-8"></div>}
+
+            <div className="mt-8 pt-6 border-t border-zinc-100 w-full flex flex-col items-center">
+              <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Model Confidence Score</span>
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={18} className={result.dataQualityScore > 80 ? "text-emerald-500" : "text-amber-500"}/>
+                <span className={`text-lg font-bold ${result.dataQualityScore > 80 ? "text-emerald-700" : "text-amber-700"}`}>{result.dataQualityScore}%</span>
+              </div>
+            </div>
+          </Card>
+
+          <Card title="Lifecycle Breakdown" className="!pb-4">
+             <div className="h-[200px] mb-4">
+               <ResponsiveContainer width="100%" height="100%">
+                 <PieChart>
+                   <Pie data={lifecycleData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
+                     {lifecycleData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                   </Pie>
+                   <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                 </PieChart>
+               </ResponsiveContainer>
+             </div>
+             <div className="space-y-3">
+               {lifecycleData.map(item => (
+                 <div key={item.name} className="flex justify-between items-center text-sm font-semibold">
+                   <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: item.fill}}></div>{item.name}</span>
+                   <span>{item.value}%</span>
+                 </div>
+               ))}
+             </div>
+          </Card>
+        </div>
+
+        {/* Data & Table Column */}
+        <div className="xl:col-span-2 space-y-6 flex flex-col">
+          <Card className="!p-0 overflow-hidden flex-1">
+            <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+              <h3 className="font-bold text-zinc-900">Bill of Materials & Data Provenance</h3>
+              <Badge variant="info">{result.nodes.filter(n => n.type === 'supplier').length} Components</Badge>
+            </div>
+            <div className="overflow-y-auto max-h-[500px] custom-scrollbar">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-white border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-500 font-bold sticky top-0 shadow-sm z-10">
+                    <th className="px-6 py-4">Component</th>
+                    <th className="px-6 py-4">Est. Emissions</th>
+                    <th className="px-6 py-4">Data Source (Provenance)</th>
+                    <th className="px-6 py-4 text-center">Quality</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50 text-sm">
+                  {result.nodes.filter(n => n.type === 'supplier').map(item => (
+                    <tr key={item.id} className="hover:bg-zinc-50 transition-colors group">
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-zinc-900">{item.name}</div>
+                        <div className="text-xs text-zinc-500 flex items-center gap-1 mt-1"><Factory size={12}/> {item.supplier} • <Globe size={12} className="ml-1"/> {item.country}</div>
+                      </td>
+                      <td className="px-6 py-4 font-bold text-zinc-900">{item.emissions.toFixed(1)} <span className="text-zinc-400 font-medium text-xs">kg</span></td>
+                      <td className="px-6 py-4">
+                        <Badge variant={item.confidence > 85 ? 'success' : item.confidence > 50 ? 'info' : 'danger'}>
+                          {item.dataSource}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`font-mono text-xs font-bold ${item.confidence > 85 ? 'text-emerald-600' : item.confidence > 50 ? 'text-blue-600' : 'text-rose-600'}`}>{item.confidence}%</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function HotspotsFeature() {
+  const { useServerQuery } = useApp();
+  const { data: hotspotsData, loading: hotLoading } = useServerQuery('hotspots');
+  const { data: supplierRisk, loading: riskLoading } = useServerQuery('supplierRisk');
+
+  if (hotLoading || riskLoading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <PageHeader 
+        title="Hotspots & Data Quality Analysis" 
+        description={<span>Identify primary emission drivers and monitor the integrity and provenance of your footprint data across the portfolio.</span>}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <Card className="!p-6">
+          <h3 className="text-lg font-bold text-zinc-900 tracking-tight mb-2">Top Emission Drivers</h3>
+          <p className="text-sm text-zinc-500 mb-6">Highest contributing components across product lines (tCO₂e).</p>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={hotspotsData.topDrivers} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f4f4f5" />
+                <XAxis type="number" axisLine={false} tickLine={false} tick={{fill: '#a1a1aa', fontSize: 12}} />
+                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#52525b', fontSize: 12, fontWeight: 500}} width={150} />
+                <Tooltip cursor={{fill: '#f4f4f5'}} contentStyle={{ borderRadius: '12px', border: '1px solid #e4e4e7', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontWeight: 500 }} />
+                <Bar dataKey="emissions" radius={[0, 4, 4, 0]}>
+                  {hotspotsData.topDrivers.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.category === 'Material' ? '#18181b' : entry.category === 'Logistics' ? '#f59e0b' : '#3b82f6'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <Card className="!p-6">
+          <h3 className="text-lg font-bold text-zinc-900 tracking-tight mb-2">Supplier Risk Matrix</h3>
+          <p className="text-sm text-zinc-500 mb-6">Emissions Volume vs. Data Quality Risk.</p>
+          <div className="h-[300px]">
+             <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis type="number" dataKey="risk" name="Data Risk (%)" tick={{fill: '#a1a1aa', fontSize: 12}} label={{ value: 'Data Inaccuracy Risk', position: 'bottom', offset: 0, fill: '#a1a1aa', fontSize: 12 }} />
+                <YAxis type="number" dataKey="emissions" name="Emissions (tCO2e)" tick={{fill: '#a1a1aa', fontSize: 12}} />
+                <Tooltip cursor={{strokeDasharray: '3 3'}} contentStyle={{ borderRadius: '12px', padding: '12px' }} />
+                <Scatter name="Suppliers" data={supplierRisk} fill="#18181b">
+                  {supplierRisk.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.risk > 50 ? '#f43f5e' : entry.risk > 30 ? '#f59e0b' : '#10b981'} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <div className="lg:col-span-2 bg-rose-50 border border-rose-200 p-6 rounded-2xl shadow-sm flex flex-col md:flex-row gap-6 justify-between items-center">
+          <div>
+            <div className="flex items-center gap-2 mb-3 text-rose-700">
+              <AlertTriangle size={18} strokeWidth={2.5}/>
+              <h4 className="text-sm font-bold uppercase tracking-widest">High Risk Anomaly Detected</h4>
+            </div>
+            <p className="text-sm text-rose-900 leading-relaxed font-medium max-w-3xl">
+              We detected a high reliance (45%) on "Spend-based estimates" within the <strong className="font-bold">Trans-Pacific Air Freight</strong> category. This represents a significant data quality risk and may artificially inflate reported Scope 3 Category 4 emissions.
+            </p>
+          </div>
+          <button className="whitespace-nowrap text-sm font-bold text-white bg-rose-600 px-6 py-3 rounded-xl hover:bg-rose-700 transition-colors shadow-sm">
+            Launch Corrective Action
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function InitiativesFeature() {
+  const { user, useServerQuery } = useApp();
+  const { data: initiatives, loading, refetch } = useServerQuery('initiatives');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (loading) return <LoadingSpinner />;
+
+  const columns = ['Identified', 'Approved', 'In Progress', 'Verified'];
+  const columnColors = { 'Identified': 'bg-zinc-400', 'Approved': 'bg-blue-500', 'In Progress': 'bg-amber-500', 'Verified': 'bg-emerald-500' };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    const formData = new FormData(e.target);
+    const payload = {
+      title: formData.get('title'),
+      category: formData.get('category'),
+      owner: user.name, 
+      target: formData.get('target'),
+      cost: formData.get('cost'),
+      urgency: formData.get('urgency')
+    };
+
+    await ServerServices.Data.createInitiative(payload, user);
+    setIsSubmitting(false);
+    setIsCreateModalOpen(false);
+    refetch(); 
   };
 
   return (
-    <div className="animate-in fade-in duration-1000 bg-white min-h-screen pt-32 md:pt-48 pb-32">
-      <Section noVerticalPadding>
-        <div className="grid lg:grid-cols-2 gap-24">
-          
-          {/* Left Column: Info & Tab Toggles */}
-          <div>
-            <RevealText text="CONTACT" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-            <RevealText text="Start the" className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950" />
-            <RevealText text="conversation." className="text-5xl md:text-7xl font-light tracking-tight text-zinc-950 mb-16" delay={100} />
-            
-            <div className="flex gap-8 border-b border-zinc-200 mb-12">
-              <Interactive>
-                <button 
-                  onClick={() => setActiveTab('direct')}
-                  className={`pb-4 text-xs tracking-[0.2em] uppercase font-semibold transition-colors relative ${activeTab === 'direct' ? 'text-zinc-950' : 'text-zinc-400 hover:text-zinc-600'}`}
-                >
-                  Direct Enquiry
-                  {activeTab === 'direct' && <span className="absolute bottom-0 left-0 w-full h-[1px] bg-zinc-950"></span>}
-                </button>
-              </Interactive>
-              <Interactive>
-                <button 
-                  onClick={() => setActiveTab('ai')}
-                  className={`pb-4 text-xs tracking-[0.2em] uppercase font-semibold transition-colors relative flex items-center gap-2 ${activeTab === 'ai' ? 'text-zinc-950' : 'text-zinc-400 hover:text-zinc-600'}`}
-                >
-                  ✨ AI Architect
-                  {activeTab === 'ai' && <span className="absolute bottom-0 left-0 w-full h-[1px] bg-zinc-950"></span>}
-                </button>
-              </Interactive>
-            </div>
+    <div className="space-y-6 animate-in fade-in">
+      <PageHeader 
+        title="Reduction Initiatives Pipeline" 
+        description={<span>Govern carbon mitigation workflows from identification to verified reduction. <ComplexTooltip text="Initiative records are transacted against the backend graph, establishing strict FK relations between owners, due dates, and product/supplier schemas."/></span>}
+        action={<button onClick={() => setIsCreateModalOpen(true)} className="px-4 py-2 bg-zinc-900 text-white text-sm font-bold rounded-xl flex items-center gap-2 hover:bg-zinc-800 transition-colors"><Plus size={16}/> Create Initiative</button>}
+      />
 
-            <div className="space-y-12">
-              {[
-                { label: 'Visit', val: '123 Architecture Way\nAuckland CBD 1010' },
-                { label: 'Call', val: '+64 9 123 4567' },
-                { label: 'Email', val: 'info@pillarproperties.co.nz' }
-              ].map((item, idx) => (
-                <div key={idx} className="border-t border-zinc-200 pt-6">
-                  <RevealText text={item.label} className="text-xs tracking-[0.2em] uppercase text-zinc-400 font-semibold mb-4" />
-                  <RevealText text={item.val} className="text-xl md:text-2xl font-light text-zinc-950 whitespace-pre-line" delay={100} />
+      <div className="flex gap-6 overflow-x-auto pb-6 h-[calc(100vh-280px)] custom-scrollbar">
+        {columns.map(col => (
+          <div key={col} className="bg-zinc-100/50 rounded-2xl p-4 border border-zinc-200/60 min-w-[300px] flex-1 flex flex-col">
+            <h3 className="text-sm font-bold text-zinc-600 uppercase tracking-widest mb-4 flex items-center gap-2 px-2 shrink-0">
+              <div className={`w-2 h-2 rounded-full ${columnColors[col]}`}></div> {col}
+              <span className="ml-auto bg-zinc-200 text-zinc-600 px-2 py-0.5 rounded-md text-[10px]">
+                {initiatives.filter(i => i.status === col).length}
+              </span>
+            </h3>
+            
+            <div className="space-y-3 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+              {initiatives.filter(i => i.status === col).map(item => (
+                <div key={item.id} className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm cursor-pointer hover:border-emerald-500 hover:shadow-md transition-all group">
+                  <div className="flex justify-between items-start mb-3">
+                    <Badge variant="default" className="!bg-zinc-50 !text-[10px]">{item.id}</Badge>
+                    {item.urgency === 'Critical' && <span className="text-[10px] font-bold text-rose-600 flex items-center gap-1 bg-rose-50 px-1.5 py-0.5 rounded"><AlertCircle size={10}/> Critical</span>}
+                  </div>
+                  <h4 className="text-sm font-bold text-zinc-900 mb-4 leading-snug group-hover:text-emerald-700 transition-colors">{item.title}</h4>
+                  
+                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-zinc-100">
+                    <div className="flex items-center justify-between text-xs font-semibold text-zinc-500">
+                      <span className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md"><TrendingDown size={12}/>{item.target}</span>
+                      <span className="flex items-center gap-1.5 bg-zinc-50 px-2 py-1 rounded-md"><DollarSign size={12}/>{item.cost}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-zinc-400 font-medium mt-1">
+                      <span className="flex items-center gap-1.5"><Users size={12}/> {item.owner}</span>
+                      <span className="flex items-center gap-1.5"><Calendar size={12}/> {item.date}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
+        ))}
+      </div>
 
-          {/* Right Column: Dynamic Form / AI Interface */}
-          <div className="lg:mt-32 bg-[#fafafa] p-8 md:p-16 border border-zinc-100 min-h-[600px] flex flex-col rounded-3xl shadow-sm">
-            {activeTab === 'direct' ? (
-              <form className="space-y-12 animate-in fade-in duration-500" onSubmit={(e) => e.preventDefault()}>
-                <div className="relative">
-                  <input type="text" placeholder="Name" required className="w-full bg-transparent border-b border-zinc-300 py-4 text-xl font-light text-zinc-950 placeholder-zinc-400 focus:outline-none focus:border-zinc-950 transition-colors" />
-                </div>
-                <div className="relative">
-                  <input type="email" placeholder="Email Address" required className="w-full bg-transparent border-b border-zinc-300 py-4 text-xl font-light text-zinc-950 placeholder-zinc-400 focus:outline-none focus:border-zinc-950 transition-colors" />
-                </div>
-                <div className="relative">
-                  <select defaultValue="" className="w-full bg-transparent border-b border-zinc-300 py-4 text-xl font-light text-zinc-400 focus:outline-none focus:border-zinc-950 focus:text-zinc-950 transition-colors appearance-none cursor-pointer">
-                    <option value="" disabled>Nature of Enquiry</option>
-                    <option value="buy">Buying a Home</option>
-                    <option value="dev">Development Partnership</option>
-                    <option value="other">Other</option>
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-8">
+            <div className="px-8 py-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+              <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2">New Mitigation Initiative</h2>
+              <button onClick={() => setIsCreateModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-200 rounded-xl transition-colors"><X size={20} /></button>
+            </div>
+            
+            <form onSubmit={handleCreate} className="p-8 space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Initiative Title</label>
+                <input name="title" required type="text" placeholder="e.g., Switch to Ocean Plastic" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+              </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Category</label>
+                  <select name="category" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none">
+                    <option>Material Subs</option><option>Logistics</option><option>Energy</option><option>Primary Data</option>
                   </select>
                 </div>
-                <div className="relative">
-                  <textarea 
-                    value={enquiryMessage}
-                    onChange={(e) => setEnquiryMessage(e.target.value)}
-                    placeholder="Project Details" 
-                    rows={4} 
-                    required 
-                    className="w-full bg-transparent border-b border-zinc-300 py-4 text-xl font-light text-zinc-950 placeholder-zinc-400 focus:outline-none focus:border-zinc-950 transition-colors resize-none"
-                  ></textarea>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Urgency</label>
+                  <select name="urgency" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none">
+                    <option>Normal</option><option>Medium</option><option>High</option><option>Critical</option>
+                  </select>
                 </div>
-                <Interactive>
-                  <button type="submit" className="w-full bg-zinc-950 text-white py-6 text-sm tracking-[0.2em] uppercase font-semibold hover:bg-zinc-800 transition-colors rounded-2xl">
-                    Submit Enquiry
-                  </button>
-                </Interactive>
-              </form>
-            ) : (
-              <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-8 duration-500">
-                <h3 className="text-2xl font-light text-zinc-950 mb-4">Vision to Reality.</h3>
-                <p className="text-zinc-500 font-light mb-8">Describe your ideal property, lifestyle requirements, or investment goals. Our AI Architect will instantly draft a preliminary project brief tailored to Auckland.</p>
-                
-                <textarea 
-                  value={aiInput}
-                  onChange={(e) => setAiInput(e.target.value)}
-                  placeholder="e.g. A 4-bedroom minimalist home in Epsom with a pool, focusing on natural light and concrete materials..." 
-                  rows={4} 
-                  className="w-full bg-transparent border-b border-zinc-300 py-4 text-xl font-light text-zinc-950 placeholder-zinc-400 focus:outline-none focus:border-zinc-950 transition-colors resize-none mb-8"
-                ></textarea>
-                
-                {!aiOutput && !isGenerating && (
-                  <Interactive>
-                    <button 
-                      onClick={handleGenerate}
-                      className="w-full bg-zinc-100 text-zinc-950 border border-zinc-200 py-6 text-sm tracking-[0.2em] uppercase font-semibold hover:bg-zinc-200 transition-colors flex justify-center items-center gap-2 rounded-2xl"
-                    >
-                      ✨ Generate Brief
-                    </button>
-                  </Interactive>
-                )}
-
-                {isGenerating && (
-                  <div className="flex justify-center items-center py-12">
-                    <div className="w-6 h-6 border-2 border-zinc-300 border-t-zinc-950 rounded-full animate-spin"></div>
-                    <span className="ml-4 text-xs tracking-widest uppercase text-zinc-400 font-semibold animate-pulse">Consulting Architect...</span>
-                  </div>
-                )}
-
-                {aiOutput && !isGenerating && (
-                  <div className="flex-1 flex flex-col animate-in fade-in duration-700">
-                    <div className="flex-1 bg-white p-6 border border-zinc-200 overflow-y-auto mb-8 rounded-2xl">
-                      <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-600 leading-relaxed">
-                        {aiOutput}
-                      </pre>
-                    </div>
-                    <Interactive>
-                      <button 
-                        onClick={attachToEnquiry}
-                        className="w-full bg-zinc-950 text-white py-6 text-sm tracking-[0.2em] uppercase font-semibold hover:bg-zinc-800 transition-colors flex justify-center items-center gap-2 rounded-2xl"
-                      >
-                        Attach to Enquiry <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </Interactive>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </Section>
-
-      {/* Map & Locations Section */}
-      <Section className="bg-white border-t border-zinc-200 mt-16 md:mt-32" noVerticalPadding>
-        <div className="py-24 md:py-32 grid lg:grid-cols-3 gap-16 items-start">
-          <div className="lg:col-span-1">
-            <RevealText text="OUR LOCATIONS" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-8" />
-            <RevealText text="Find us across Auckland." className="text-4xl md:text-5xl font-light tracking-tight text-zinc-950 mb-12" />
-            
-            <div className="space-y-8">
-              <div>
-                <h4 className="text-lg font-medium text-zinc-950 mb-2">Head Office</h4>
-                <p className="text-sm text-zinc-500 font-light">123 Architecture Way<br/>Auckland CBD 1010</p>
-              </div>
-              <div className="border-t border-zinc-200 pt-8">
-                <h4 className="text-lg font-medium text-zinc-950 mb-4">Active Development Sites</h4>
-                <ul className="space-y-4">
-                  <li className="flex items-start gap-3 text-sm text-zinc-500 font-light">
-                    <MapPin className="w-4 h-4 mt-0.5 text-zinc-400 shrink-0" />
-                    Parnell Ascend, Parnell
-                  </li>
-                  <li className="flex items-start gap-3 text-sm text-zinc-500 font-light">
-                    <MapPin className="w-4 h-4 mt-0.5 text-zinc-400 shrink-0" />
-                    Orakei Basin Villas, Orakei
-                  </li>
-                  <li className="flex items-start gap-3 text-sm text-zinc-500 font-light">
-                    <MapPin className="w-4 h-4 mt-0.5 text-zinc-400 shrink-0" />
-                    Grey Lynn Urban, Grey Lynn
-                  </li>
-                  <li className="flex items-start gap-3 text-sm text-zinc-500 font-light">
-                    <MapPin className="w-4 h-4 mt-0.5 text-zinc-400 shrink-0" />
-                    Peninsula Terraces, Te Atatu
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-          
-          <div className="lg:col-span-2 h-[400px] md:h-[600px] bg-zinc-100 rounded-3xl overflow-hidden shadow-sm relative grayscale-[50%] hover:grayscale-0 transition-all duration-700">
-            <iframe 
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d102148.9740618037!2d174.68652391054366!3d-36.86214309320956!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x6d0d47e6736a4ceb%3A0x500ef6143a29917!2sAuckland%2C%20New%20Zealand!5e0!3m2!1sen!2sus!4v1709214000000!5m2!1sen!2sus" 
-              width="100%" 
-              height="100%" 
-              style={{ border: 0 }} 
-              allowFullScreen="" 
-              loading="lazy" 
-              referrerPolicy="no-referrer-when-downgrade"
-              className="absolute inset-0 w-full h-full object-cover"
-              title="Auckland Map"
-            ></iframe>
-          </div>
-        </div>
-      </Section>
-
-      {/* NEW: Newsletter / Stay Connected */}
-      <Section className="bg-zinc-950 text-white border-t border-zinc-800 text-center" innerClassName="py-24 md:py-32 flex flex-col items-center">
-         <RevealText text="STAY UPDATED" className="text-xs tracking-[0.3em] uppercase text-zinc-500 font-semibold mb-8" />
-         <RevealText text="Subscribe to our journal." className="text-4xl md:text-5xl font-light tracking-tight text-white mb-8" />
-         <RevealText text="Get the latest insights on Auckland's property market, architectural trends, and exclusive early access to upcoming developments." className="text-zinc-400 font-light max-w-xl leading-relaxed mb-12" delay={100} />
-         
-         <form className="w-full max-w-md flex relative" onSubmit={(e) => e.preventDefault()}>
-           <input type="email" placeholder="Enter your email" className="w-full bg-transparent border-b border-zinc-700 py-4 text-white placeholder-zinc-500 focus:outline-none focus:border-white transition-colors pr-12" required />
-           <button type="submit" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors p-2">
-             <ArrowRight className="w-5 h-5" />
-           </button>
-         </form>
-      </Section>
-
-      {/* What Happens Next Section */}
-      <Section className="border-t border-zinc-200 bg-zinc-50 text-center">
-        <div className="max-w-5xl mx-auto">
-          <RevealText text="THE PROCESS" className="text-xs tracking-[0.3em] uppercase text-zinc-400 font-semibold mb-16 text-center" />
-          <RevealText text="What happens next?" className="text-4xl md:text-5xl font-light tracking-tight text-zinc-950 mb-20 text-center" />
-          
-          <div className="grid md:grid-cols-3 gap-12 relative">
-            {/* Desktop connecting line */}
-            <div className="hidden md:block absolute top-6 left-[15%] right-[15%] h-[1px] bg-zinc-200 -z-10"></div>
-            
-            {[
-              { step: '01', title: 'Review', desc: 'Our architecture and development team reviews your enquiry and initial requirements within 24 hours.' },
-              { step: '02', title: 'Consultation', desc: 'We schedule a complimentary 45-minute discovery call to discuss site feasibility and your architectural vision.' },
-              { step: '03', title: 'Proposal', desc: 'We present a high-level conceptual brief, projected timelines, and a structural fee estimate.' }
-            ].map((item, idx) => (
-              <div key={idx} className="relative flex flex-col items-center text-center px-6">
-                <div className="w-12 h-12 bg-white border border-zinc-200 rounded-full flex items-center justify-center text-xs tracking-widest font-semibold text-zinc-950 mb-8">
-                  <RevealText text={item.step} delay={idx * 100} />
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Target Reduction</label>
+                  <input name="target" required type="text" placeholder="-100 tCO2e" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none" />
                 </div>
-                <RevealText text={item.title} className="text-2xl font-light text-zinc-950 mb-4" delay={idx * 100 + 50} />
-                <RevealText text={item.desc} className="text-sm text-zinc-500 font-light leading-relaxed" delay={idx * 100 + 100} />
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Est. Cost Impact</label>
+                  <input name="cost" required type="text" placeholder="-$0.10/unit" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none" />
+                </div>
               </div>
-            ))}
+
+              <div className="pt-6 border-t border-zinc-100 flex justify-end gap-3">
+                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-5 py-2.5 text-sm font-bold text-zinc-600 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-100 transition-colors">Cancel</button>
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-2 disabled:opacity-50">
+                  {isSubmitting ? <RefreshCw size={16} className="animate-spin"/> : 'Save Initiative'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </Section>
+      )}
     </div>
   );
-};
+}
 
+function ReportsFeature() {
+  const { user, useServerQuery } = useApp();
+  const { data: reports, loading, error, refetch } = useServerQuery('reports');
+  const [isRunModalOpen, setIsRunModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-// --- MAIN APP COMPONENT ---
+  const handleRunReport = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    const formData = new FormData(e.target);
+    const payload = { name: formData.get('name'), framework: formData.get('framework') };
 
-export default function App() {
-  const [currentPage, setCurrentPage] = useState('home');
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
+    await ServerServices.Data.runReportJob(payload, user);
+    setIsSubmitting(false);
+    setIsRunModalOpen(false);
+    refetch(); 
+  };
 
-  useEffect(() => {
-    const styleSheet = document.createElement("style");
-    styleSheet.type = "text/css";
-    styleSheet.innerText = ultraModernStyles;
-    document.head.appendChild(styleSheet);
-    
-    const handleScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    
-    return () => {
-      document.head.removeChild(styleSheet);
-      window.removeEventListener('scroll', handleScroll);
-    };
-  }, []);
-
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'auto' });
-    setIsMenuOpen(false);
-  }, [currentPage]);
-
-  const navLinks = ['home', 'about', 'services', 'projects', 'gallery', 'contact'];
+  if (loading) return <LoadingSpinner />;
+  if (error) return <AccessDenied />;
 
   return (
-    <CursorContext.Provider value={{ isHovering, setIsHovering }}>
-      <div className="min-h-screen flex flex-col font-sans text-zinc-950 selection:bg-zinc-950 selection:text-white bg-[#fafafa] overflow-x-hidden relative">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      
+      <PageHeader 
+        title="Compliance & Disclosures" 
+        description={<span>Generate audit-ready exports for regulatory bodies. <ComplexTooltip text="Generates immutable cryptographic hashes (SHA-256) of materialized views to guarantee point-in-time auditability of dynamically generated compliance artifacts." /></span>}
+        action={<button onClick={() => setIsRunModalOpen(true)} className="px-5 py-2.5 text-sm font-bold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors shadow-sm flex items-center gap-2"><Plus size={16} /> Run New Report</button>}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card className="!p-6 flex flex-row items-center gap-4">
+          <div className="p-4 bg-emerald-50 rounded-full text-emerald-600"><FileText size={24}/></div>
+          <div><h4 className="text-sm font-bold text-zinc-500 uppercase tracking-widest">Total Reports Generated</h4><span className="text-3xl font-black text-zinc-900">124</span></div>
+        </Card>
+        <Card className="!p-6 flex flex-row items-center gap-4">
+          <div className="p-4 bg-blue-50 rounded-full text-blue-600"><ShieldCheck size={24}/></div>
+          <div><h4 className="text-sm font-bold text-zinc-500 uppercase tracking-widest">Compliance Score</h4><span className="text-3xl font-black text-zinc-900">98%</span></div>
+        </Card>
+        <Card className="!p-6 flex flex-row items-center gap-4">
+          <div className="p-4 bg-amber-50 rounded-full text-amber-600"><Clock size={24}/></div>
+          <div><h4 className="text-sm font-bold text-zinc-500 uppercase tracking-widest">Pending Audits</h4><span className="text-3xl font-black text-zinc-900">2</span></div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         
-        <CustomCursor />
-
-        {/* Minimal Header with Uniform Padding Container */}
-        <header className={`fixed w-full z-50 transition-all duration-700 ease-out px-[3%] ${scrolled ? 'py-2 md:py-4 bg-white/95 backdrop-blur-sm shadow-sm' : 'py-4 md:py-6'}`}>
-          <div className="w-full max-w-[1600px] mx-auto flex justify-between items-center">
-            
-            {/* Logo */}
-            <div className="flex items-center z-10">
-              <Interactive onClick={() => setCurrentPage('home')}>
-                <img 
-                  src="https://static.wixstatic.com/media/548938_1509800225e542a4a2d4144aa68163e9~mv2.png" 
-                  alt="Pillar Properties" 
-                  className={`w-auto cursor-pointer object-contain transition-all duration-700 ${scrolled ? 'h-6 md:h-7' : 'h-7 md:h-9'} ${!scrolled && currentPage === 'home' ? 'brightness-0 invert' : ''}`}
-                />
-              </Interactive>
-            </div>
-
-            {/* Universal Menu Toggle (Hamburger) */}
-            <Interactive className={`z-10 transition-colors duration-500 flex items-center justify-end flex-1 ${!scrolled && currentPage === 'home' ? 'text-white' : 'text-zinc-950'}`}>
-              <button onClick={() => setIsMenuOpen(true)} className="flex items-center gap-3 p-2 -mr-2 group hover:opacity-70 transition-opacity">
-                <span className="text-[10px] md:text-xs tracking-widest uppercase font-medium hidden sm:block mt-0.5">Menu</span>
-                <Menu className="w-6 h-6 md:w-7 md:h-7" />
-              </button>
-            </Interactive>
-          </div>
-        </header>
-
-        {/* Menu Backdrop Overlay */}
-        <div 
-          className={`fixed inset-0 bg-zinc-950/30 backdrop-blur-sm z-[90] transition-opacity duration-700 ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-          onClick={() => setIsMenuOpen(false)}
-        />
-
-        {/* Right Side Slide-Out Menu Panel */}
-        <div className={`fixed top-0 right-0 h-full w-full sm:w-[400px] md:w-[450px] bg-zinc-950 z-[100] flex flex-col p-8 md:p-12 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="flex justify-between items-center w-full">
-            <span className="text-[10px] tracking-[0.3em] uppercase text-zinc-500 font-semibold">Navigation</span>
-            <button onClick={() => setIsMenuOpen(false)} className="text-white hover:text-zinc-400 transition-colors p-2 -mr-2">
-              <X className="w-8 h-8" />
-            </button>
-          </div>
+        {/* Templates Sidebar */}
+        <div className="lg:col-span-1 space-y-4">
+          <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-widest">Available Templates</h3>
           
-          <div className="flex flex-col items-start justify-center gap-8 mt-12 mb-12 flex-1 w-full">
-            {navLinks.map((link, i) => (
-              <div 
-                key={link} 
-                onClick={() => setCurrentPage(link)} 
-                className={`text-4xl md:text-5xl font-light tracking-tight text-white uppercase cursor-pointer text-left transition-colors duration-500 hover:text-zinc-400 ${isMenuOpen ? 'translate-x-0 opacity-100' : 'translate-x-12 opacity-0'}`}
-                style={{ transitionDelay: `${100 + (i * 75)}ms`, transitionProperty: 'opacity, transform, color' }}
-              >
-                {link}
-              </div>
-            ))}
+          <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 hover:border-emerald-500 cursor-pointer transition-colors group" onClick={() => setIsRunModalOpen(true)}>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-100 transition-colors"><Globe size={18}/></div>
+              <h4 className="font-bold text-zinc-900 text-sm">GHG Protocol Core</h4>
+            </div>
+            <p className="text-xs text-zinc-500 leading-relaxed">Standard Scope 1, 2, 3 rollout for corporate ESG disclosure.</p>
           </div>
 
-          <div className="flex flex-col items-start gap-4 mt-auto pt-12 border-t border-zinc-800 text-left w-full">
-             <span className="text-[10px] tracking-[0.3em] uppercase text-zinc-500 font-semibold mb-2">Get in touch</span>
-             <a href="mailto:info@pillarproperties.co.nz" className="text-white hover:text-zinc-400 transition-colors font-light text-lg">info@pillarproperties.co.nz</a>
-             <a href="tel:+6491234567" className="text-white hover:text-zinc-400 transition-colors font-light text-lg">+64 9 123 4567</a>
+          <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 hover:border-blue-500 cursor-pointer transition-colors group" onClick={() => setIsRunModalOpen(true)}>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-100 transition-colors"><CheckCircle size={18}/></div>
+              <h4 className="font-bold text-zinc-900 text-sm">EU CSRD Pack</h4>
+            </div>
+            <p className="text-xs text-zinc-500 leading-relaxed">Formats data to meet ESRS E1 climate change disclosure requirements.</p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 hover:border-purple-500 cursor-pointer transition-colors group" onClick={() => setIsRunModalOpen(true)}>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-100 transition-colors"><Box size={18}/></div>
+              <h4 className="font-bold text-zinc-900 text-sm">Product LCA Extract</h4>
+            </div>
+            <p className="text-xs text-zinc-500 leading-relaxed">ISO 14067 compliant lifecycle footprint for a specific product SKU.</p>
           </div>
         </div>
 
-        {/* Persistent Floating CTA */}
-        {scrolled && currentPage !== 'contact' && (
-           <Interactive className="fixed bottom-8 right-6 md:right-12 lg:right-16 z-40 animate-in slide-in-from-bottom-10 fade-in duration-500 hidden md:block">
-              <button 
-                onClick={() => setCurrentPage('contact')} 
-                className="bg-zinc-950 text-white px-8 py-4 text-xs tracking-[0.2em] uppercase font-semibold rounded-full shadow-2xl hover:bg-zinc-800 transition-colors flex items-center gap-2"
-              >
-                Inquire Now <ArrowUpRight className="w-4 h-4" />
+        {/* Report History Table */}
+        <div className="lg:col-span-3 bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col">
+          <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+            <h3 className="font-bold text-zinc-900 flex items-center gap-2">
+              <FileText size={18} className="text-zinc-400"/> Report Run History
+            </h3>
+            <div className="flex items-center gap-4">
+              <button onClick={refetch} className="text-zinc-400 hover:text-zinc-900 transition-colors p-1" title="Refresh Jobs">
+                <RefreshCw size={16} />
               </button>
-           </Interactive>
-        )}
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto flex-1 custom-scrollbar">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-white border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-500 font-bold sticky top-0">
+                  <th className="px-6 py-4">Report Details</th>
+                  <th className="px-6 py-4">Framework</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4 text-right">Artifact</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-50 text-sm">
+                {reports.map((report) => (
+                  <tr key={report.id} className="hover:bg-zinc-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-zinc-900">{report.name}</div>
+                      <div className="text-xs text-zinc-400 font-medium flex items-center gap-2 mt-0.5">
+                        <span className="font-mono">{report.id}</span> • {report.date} • by {report.user}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center bg-zinc-100 text-zinc-700 px-2 py-1 rounded text-xs font-bold border border-zinc-200">
+                        {report.framework}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {report.status === 'Completed' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                          <CheckCircle size={14} /> Completed
+                        </span>
+                      )}
+                      {report.status === 'Running' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                          <RefreshCw size={14} className="animate-spin" /> Compiling...
+                        </span>
+                      )}
+                      {report.status === 'Failed' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-100">
+                          <AlertCircle size={14} /> Error
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {report.status === 'Completed' ? (
+                        <div className="flex justify-end gap-2">
+                           <button className="text-zinc-400 hover:text-zinc-900 p-2 rounded-lg transition-colors border border-transparent hover:border-zinc-200" title="Evidence Pack (Zip)">
+                             <Database size={16} />
+                           </button>
+                           <button className="text-xs font-bold text-zinc-700 bg-white border border-zinc-200 hover:bg-zinc-50 px-3 py-1.5 rounded-lg transition-colors shadow-sm flex items-center gap-2">
+                             <Download size={14} className="text-emerald-600" /> PDF
+                           </button>
+                        </div>
+                      ) : (
+                        <button className="text-zinc-300 cursor-not-allowed p-2 rounded-lg flex items-center justify-end w-full">
+                          <MoreVertical size={18} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-        {/* Dynamic Page Rendering */}
-        <main className="flex-grow z-10 bg-[#fafafa]">
-          {currentPage === 'home' && <HomePage navigate={setCurrentPage} />}
-          {currentPage === 'about' && <AboutPage />}
-          {currentPage === 'services' && <ServicesPage />}
-          {currentPage === 'projects' && <ProjectsPage />}
-          {currentPage === 'gallery' && <GalleryPage />}
-          {currentPage === 'contact' && <ContactPage />}
-        </main>
+      </div>
 
-        {/* Architectural Footer */}
-        <footer className="bg-zinc-950 text-zinc-400 py-24 px-[3%] relative z-20">
-          <div className="max-w-[1600px] mx-auto w-full">
-            <div className="flex flex-col md:flex-row justify-between items-start border-b border-zinc-800 pb-20">
-              <div className="mb-12 md:mb-0">
-                <Interactive onClick={() => setCurrentPage('home')}>
-                  <img 
-                    src="https://static.wixstatic.com/media/548938_7808033ca9fd4a2c9b9240e3e3f945e2~mv2.png" 
-                    alt="Pillar Properties" 
-                    className="h-12 md:h-16 w-auto mb-6 cursor-pointer object-contain" 
-                  />
-                </Interactive>
-                <div className="flex gap-6 mt-12">
-                  <Interactive><Instagram className="w-5 h-5 text-zinc-500 hover:text-white transition-colors cursor-pointer" /></Interactive>
-                  <Interactive><Linkedin className="w-5 h-5 text-zinc-500 hover:text-white transition-colors cursor-pointer" /></Interactive>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-12 md:gap-32">
-                <div>
-                  <h4 className="text-[10px] md:text-xs tracking-[0.2em] uppercase font-semibold text-zinc-600 mb-8">Navigation</h4>
-                  <ul className="space-y-4 text-sm md:text-base">
-                    {navLinks.map(link => (
-                      <li key={link}>
-                        <Interactive onClick={() => setCurrentPage(link)}>
-                          <span className="hover:text-white transition-colors capitalize cursor-pointer font-light">{link}</span>
-                        </Interactive>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="text-[10px] md:text-xs tracking-[0.2em] uppercase font-semibold text-zinc-600 mb-8">Contact</h4>
-                  <ul className="space-y-4 font-light text-sm md:text-base">
-                    <li>Auckland CBD</li>
-                    <li>+64 9 123 4567</li>
-                    <li>info@pillarproperties.co.nz</li>
-                  </ul>
-                </div>
-              </div>
+      {isRunModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-8">
+            <div className="px-8 py-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+              <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2">Run Compliance Report</h2>
+              <button onClick={() => setIsRunModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-200 rounded-xl transition-colors"><X size={20} /></button>
             </div>
             
-            <div className="pt-8 flex flex-col md:flex-row justify-between items-center text-[10px] md:text-xs tracking-widest uppercase font-semibold text-zinc-600">
-              <p className="mb-4 md:mb-0">&copy; {new Date().getFullYear()} PILLAR PROPERTIES</p>
-              <div className="flex gap-8">
-                <Interactive><span className="hover:text-zinc-400 cursor-pointer transition-colors">Privacy</span></Interactive>
-                <Interactive><span className="hover:text-zinc-400 cursor-pointer transition-colors">Terms</span></Interactive>
+            <form onSubmit={handleRunReport} className="p-8 space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Report Name</label>
+                <input name="name" required type="text" defaultValue="FY25 Mid-Year Disclosure" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+              </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Framework</label>
+                  <select name="framework" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none">
+                    <option>CSRD</option><option>GHG Protocol</option><option>SEC Climate</option><option>ISO 14067</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Target Period</label>
+                  <select name="period" className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none">
+                    <option>H1 2025</option><option>Q1 2025</option><option>FY 2024</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-4 flex items-start gap-3">
+                <Lock size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">As-Of Data Snapshot</label>
+                  <p className="text-xs text-amber-700 leading-relaxed mb-3">This report will lock the underlying emission factors and supplier data as they exist today to guarantee future auditability.</p>
+                  <div className="flex items-center gap-2 bg-white border border-amber-200 rounded-lg px-3 py-1.5 shadow-sm text-sm font-semibold w-fit">
+                    <Calendar size={14} className="text-amber-500"/> Current Live Data
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-zinc-100 flex justify-end gap-3">
+                <button type="button" onClick={() => setIsRunModalOpen(false)} className="px-5 py-2.5 text-sm font-bold text-zinc-600 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-100 transition-colors">Cancel</button>
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 text-sm font-bold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors shadow-sm flex items-center gap-2 disabled:opacity-50">
+                  {isSubmitting ? <RefreshCw size={16} className="animate-spin"/> : 'Execute Job'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+function SuppliersFeature() {
+  const { useServerQuery } = useApp();
+  const { data: suppliers, loading } = useServerQuery('suppliers');
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <PageHeader 
+        title="Supplier Collaboration Portal" 
+        description="Monitor Tier-1 and Tier-2 suppliers. Request and verify primary Environmental Product Declarations (EPDs) to improve portfolio data quality."
+        action={<button className="px-5 py-2.5 text-sm font-bold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors shadow-sm flex items-center gap-2"><Plus size={16} /> Invite Supplier</button>}
+      />
+
+      <div className="flex gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
+        <div className="relative w-full md:w-96">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+          <input type="text" placeholder="Search suppliers by name or ID..." className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none" />
+        </div>
+        <button className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-xl hover:bg-zinc-100 transition-colors">
+          <Filter size={16} /> Filter
+        </button>
+      </div>
+
+      <Card className="!p-0 overflow-hidden">
+        <div className="overflow-x-auto custom-scrollbar max-h-[500px]">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-50 border-b border-zinc-200 text-xs uppercase tracking-wider text-zinc-500 font-bold sticky top-0 z-10">
+                <th className="px-6 py-4">Supplier Details</th>
+                <th className="px-6 py-4">Total Emissions (tCO₂e)</th>
+                <th className="px-6 py-4">Data Verification</th>
+                <th className="px-6 py-4 text-center">ESG Score</th>
+                <th className="px-6 py-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 text-sm">
+              {suppliers.map(s => (
+                <tr key={s.id} className="hover:bg-zinc-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="font-bold text-zinc-900">{s.name}</div>
+                    <div className="text-xs text-zinc-500 flex items-center gap-1 mt-1"><Globe size={12}/> {s.location} • <span className="font-mono text-[10px] bg-zinc-100 px-1 rounded">{s.id}</span></div>
+                  </td>
+                  <td className="px-6 py-4 font-bold text-zinc-900">{s.emissions.toLocaleString()}</td>
+                  <td className="px-6 py-4">
+                    {s.status === 'Verified' ? <Badge variant="success"><ShieldCheck size={12} className="mr-1 inline"/> Primary Data</Badge> 
+                     : s.status === 'Pending' ? <Badge variant="warning"><Clock size={12} className="mr-1 inline"/> Data Requested</Badge>
+                     : s.status === 'In Review' ? <Badge variant="info"><Activity size={12} className="mr-1 inline"/> Under Review</Badge>
+                     : <Badge variant="danger"><AlertCircle size={12} className="mr-1 inline"/> Using Averages</Badge>}
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-black text-sm
+                      ${s.score.includes('A') ? 'bg-emerald-100 text-emerald-800' : s.score.includes('B') ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
+                      {s.score}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                     <button className="text-zinc-400 hover:text-zinc-900 p-2 rounded-lg hover:bg-zinc-100 ml-auto flex"><MoreVertical size={18} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function DataHubFeature() {
+  const { user } = useApp();
+  const [ingestState, setIngestState] = useState('idle'); 
+  const [mappedItems, setMappedItems] = useState([]);
+  const [progress, setProgress] = useState(0);
+
+  const simulateIngestion = async () => {
+    setIngestState('processing');
+    setProgress(15);
+    await new Promise(r => setTimeout(r, 800));
+    setProgress(40);
+    
+    const results = await ServerServices.Data.processIngestionFile({ name: 'BOM_Extract_Q3.csv' }, user);
+    
+    setProgress(85);
+    await new Promise(r => setTimeout(r, 600));
+    setProgress(100);
+    setMappedItems(results);
+    setIngestState('complete');
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      
+      <PageHeader 
+        title="AI Data Ingestion Engine" 
+        description={<span>NLP Fuzzy Matching pipeline for unstructured data. <ComplexTooltip text="Ingests unstructured tabular data, utilizing an LLM router to bypass strict regex limitations, executing semantic entity extraction and mapping against the global LCA taxonomy." /></span>}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="!p-6 flex flex-row items-center justify-between">
+          <div><h4 className="text-sm font-bold text-zinc-500 uppercase tracking-widest mb-1">Auto-Map Success</h4><span className="text-4xl font-extrabold text-emerald-600">94.2%</span></div>
+          <div className="p-3 bg-emerald-50 rounded-full text-emerald-600"><CheckCircle size={24}/></div>
+        </Card>
+        <Card className="!p-6 flex flex-row items-center justify-between">
+          <div><h4 className="text-sm font-bold text-zinc-500 uppercase tracking-widest mb-1">Rows Processed</h4><span className="text-4xl font-extrabold text-zinc-900">1.2M</span></div>
+          <div className="p-3 bg-zinc-100 rounded-full text-zinc-600"><Layers size={24}/></div>
+        </Card>
+        <Card className="!p-6 !bg-amber-50 !border-amber-200 flex flex-row items-center justify-between">
+          <div><h4 className="text-sm font-bold text-amber-700 uppercase tracking-widest mb-1">Review Queue</h4><span className="text-4xl font-extrabold text-amber-900">128</span></div>
+          <div className="p-3 bg-amber-100 rounded-full text-amber-700"><AlertCircle size={24}/></div>
+        </Card>
+      </div>
+
+      <Card className="!p-0 overflow-hidden">
+        <div className="p-8 flex-1 flex flex-col min-h-[400px] justify-center">
+          {ingestState === 'idle' && (
+            <div className="border-2 border-dashed border-zinc-300 rounded-2xl p-12 flex flex-col items-center justify-center bg-zinc-50/50 hover:bg-zinc-50 transition-colors cursor-pointer group" onClick={simulateIngestion}>
+              <div className="w-16 h-16 rounded-2xl bg-white shadow-sm border border-zinc-200 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Cloud className="text-emerald-500" size={32} />
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900 mb-2">Drag & Drop raw BOM extract</h3>
+              <p className="text-sm text-zinc-500 mb-6">Supports .csv, .xlsx, or JSON dumps from SAP, Oracle, or Teamcenter.</p>
+              <button className="px-6 py-2.5 bg-zinc-900 text-white font-bold rounded-xl text-sm shadow-sm hover:bg-zinc-800 transition-all flex items-center gap-2">
+                <FileText size={16} /> Simulate ERP Upload
+              </button>
+            </div>
+          )}
+
+          {ingestState === 'processing' && (
+            <div className="flex flex-col items-center justify-center animate-in fade-in">
+              <div className="relative w-24 h-24 mb-8">
+                <div className="absolute inset-0 rounded-full border-4 border-zinc-100"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center"><Star className="text-emerald-500" size={28} /></div>
+              </div>
+              <h3 className="text-xl font-bold text-zinc-900 mb-3 tracking-tight">AI Semantic Mapping in Progress</h3>
+              <p className="text-sm text-zinc-500 font-medium max-w-sm text-center mb-8">Vectorizing raw strings, inferring physical attributes, and cross-referencing global LCA databases...</p>
+              <div className="w-full max-w-md bg-zinc-100 rounded-full h-2 mb-2 overflow-hidden">
+                <div className="bg-emerald-500 h-2 rounded-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
+              </div>
+              <span className="text-xs font-bold text-zinc-400 tracking-widest uppercase">{progress}% Complete</span>
+            </div>
+          )}
+
+          {ingestState === 'complete' && (
+            <div className="animate-in slide-in-from-bottom-4 fade-in duration-500">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold text-zinc-900 flex items-center gap-2"><GitMerge className="text-emerald-500" size={20} /> Mapping Results Matrix</h3>
+                <button onClick={() => setIngestState('idle')} className="text-sm font-semibold text-zinc-500 hover:text-zinc-900 flex items-center gap-2"><RefreshCw size={14} /> Process New Batch</button>
+              </div>
+              
+              <div className="border border-zinc-200 rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-zinc-50 border-b border-zinc-200 text-xs uppercase tracking-wider text-zinc-500 font-bold">
+                      <th className="px-6 py-4">Raw ERP String</th>
+                      <th className="px-6 py-4">AI Mapped Scientific Category</th>
+                      <th className="px-6 py-4 text-center">Confidence Score</th>
+                      <th className="px-6 py-4">Est. Factor (kgCO₂e)</th>
+                      <th className="px-6 py-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 text-sm">
+                    {mappedItems.map((item, idx) => (
+                      <tr key={idx} className={item.status === 'Needs Review' ? 'bg-amber-50/30' : 'hover:bg-zinc-50'}>
+                        <td className="px-6 py-4"><span className="font-mono text-xs text-zinc-700 bg-zinc-100 px-2 py-1 rounded">{item.raw}</span></td>
+                        <td className="px-6 py-4">
+                          <div className="font-semibold text-zinc-900">{item.mapped}</div>
+                          {item.status === 'Needs Review' && <div className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-1">Vague taxonomy detected</div>}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <Badge variant={item.confidence >= 90 ? 'success' : item.confidence >= 75 ? 'info' : 'warning'}>{item.confidence}%</Badge>
+                        </td>
+                        <td className="px-6 py-4 font-semibold text-zinc-700">{item.factor}</td>
+                        <td className="px-6 py-4 text-right">
+                          {item.status === 'Needs Review' ? (
+                            <button className="text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 px-4 py-1.5 rounded-lg shadow-sm">Manual Remap</button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-400 mr-2"><CheckCircle size={14} className="text-emerald-500" /> Approved</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function IntegrationsFeature() {
+  const { user, useServerQuery } = useApp();
+  const { error } = useServerQuery('integrations');
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSync = async (systemName) => {
+    setSyncing(systemName);
+    await ServerServices.Data.triggerIntegrationSync(systemName, user);
+    setSyncing(false);
+  };
+
+  if (error) return <AccessDenied />;
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <PageHeader 
+        title="Enterprise API Connectors" 
+        description={<span>Manage bi-directional data streams between internal ERPs and LCA databases. <ComplexTooltip text="Utilizing multiplexed gRPC tunnels over TLS 1.3 to guarantee sub-millisecond payload delivery between internal ERP shards and the ZeroByDesign vector space." /></span>}
+        action={<button className="px-5 py-2.5 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-2"><Plus size={16} /> Add Custom API</button>}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* Active Connections */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div> Active Syncs
+          </h3>
+          
+          <div className="bg-white rounded-2xl border border-emerald-500/30 shadow-sm overflow-hidden ring-1 ring-emerald-500/10">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center font-black text-blue-700 text-xl">SAP</div>
+                  <div>
+                    <h4 className="font-bold text-zinc-900 text-lg">SAP S/4HANA</h4>
+                    <Badge variant="success" className="mt-1"><CheckCircle size={12}/> Real-time Streaming</Badge>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleSync('SAP S/4HANA')}
+                  disabled={syncing}
+                  className="p-2 text-zinc-400 hover:text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg transition-colors" title="Force Sync">
+                  <RefreshCw size={18} className={syncing === 'SAP S/4HANA' ? 'animate-spin text-emerald-600' : ''} />
+                </button>
+              </div>
+              <p className="text-sm text-zinc-500 mb-6">Ingesting global Procurement records, BOM variants, and Tier 1 vendor master data.</p>
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-100">
+                <div><p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">Payload Volume</p><p className="font-bold text-zinc-900">1.4 TB / mo</p></div>
+                <div><p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">Last Heartbeat</p><p className="font-bold text-zinc-900 flex items-center gap-1.5"><Activity size={14} className="text-emerald-500" /> 12s ago</p></div>
               </div>
             </div>
           </div>
-        </footer>
+
+          <div className="bg-white rounded-2xl border border-emerald-500/30 shadow-sm overflow-hidden ring-1 ring-emerald-500/10">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-zinc-900 flex items-center justify-center font-black text-white text-xl">eI</div>
+                  <div>
+                    <h4 className="font-bold text-zinc-900 text-lg">Ecoinvent v3.9</h4>
+                    <Badge variant="success" className="mt-1"><CheckCircle size={12}/> REST API Connected</Badge>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleSync('Ecoinvent v3.9')}
+                  disabled={syncing}
+                  className="p-2 text-zinc-400 hover:text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-lg transition-colors" title="Force Sync">
+                  <RefreshCw size={18} className={syncing === 'Ecoinvent v3.9' ? 'animate-spin text-emerald-600' : ''} />
+                </button>
+              </div>
+              <p className="text-sm text-zinc-500 mb-6">Primary scientific database for global cradle-to-gate emission factors across 18,000+ processes.</p>
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-100">
+                <div><p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">API Key Status</p><p className="font-bold text-emerald-600">Valid (Auto-rotates)</p></div>
+                <div><p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">Nodes Mapped</p><p className="font-bold text-zinc-900">4,291</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Available Connections */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-zinc-300"></div> Available Connectors
+          </h3>
+
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden opacity-80 hover:opacity-100 transition-opacity">
+            <div className="p-6 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center font-black text-rose-700 text-xl">OR</div>
+                <div><h4 className="font-bold text-zinc-900">Oracle NetSuite</h4><p className="text-xs text-zinc-500 font-medium">ERP Integration</p></div>
+              </div>
+              <button className="px-4 py-2 text-sm font-bold text-zinc-700 bg-zinc-100 rounded-xl hover:bg-zinc-200 transition-colors">Connect via OAuth</button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden opacity-80 hover:opacity-100 transition-opacity">
+            <div className="p-6 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center font-black text-teal-700 text-xl">TC</div>
+                <div><h4 className="font-bold text-zinc-900">Siemens Teamcenter</h4><p className="text-xs text-zinc-500 font-medium">PLM Integration</p></div>
+              </div>
+              <button className="px-4 py-2 text-sm font-bold text-zinc-700 bg-zinc-100 rounded-xl hover:bg-zinc-200 transition-colors">Configure SOAP</button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden opacity-80 hover:opacity-100 transition-opacity">
+            <div className="p-6 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center font-black text-purple-700 text-xl">SP</div>
+                <div><h4 className="font-bold text-zinc-900">Sphera LCA</h4><p className="text-xs text-zinc-500 font-medium">Scientific Database</p></div>
+              </div>
+              <button className="px-4 py-2 text-sm font-bold text-zinc-700 bg-zinc-100 rounded-xl hover:bg-zinc-200 transition-colors">Add License Key</button>
+            </div>
+          </div>
+        </div>
 
       </div>
-    </CursorContext.Provider>
+    </div>
   );
+}
+
+function SettingsFeature() {
+  const { user, useServerQuery } = useApp();
+  // Ensure non-admins default to workspace settings, auditors default to audit
+  const [activeSubTab, setActiveSubTab] = useState(user.role === 'auditor' ? 'audit' : 'general');
+  const [logs, setLogs] = useState([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  
+  const { data: usersList, loading: usersLoading } = useServerQuery('users');
+
+  useEffect(() => {
+    if (activeSubTab === 'audit') {
+      setIsLoadingLogs(true);
+      ServerServices.Audit.getLogs(user)
+        .then(data => { setLogs(data); setIsLoadingLogs(false); })
+        .catch(err => { console.error("Access Denied"); setIsLoadingLogs(false); });
+    }
+  }, [activeSubTab, user]);
+
+  return (
+    <div className="max-w-5xl space-y-8 animate-in fade-in duration-500">
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex">
+        
+        {/* Settings Sidebar with RBAC */}
+        <div className="w-64 bg-zinc-50 border-r border-zinc-200 p-6 flex flex-col gap-2 shrink-0">
+          
+          {user.role !== 'auditor' && (
+            <>
+              <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 px-2">Administration</h3>
+              <button onClick={() => setActiveSubTab('general')} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeSubTab === 'general' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-600 hover:bg-zinc-200/50'}`}><Settings size={16}/> Workspace</button>
+            </>
+          )}
+
+          {user.role === 'admin' && (
+            <button onClick={() => setActiveSubTab('users')} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeSubTab === 'users' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-600 hover:bg-zinc-200/50'}`}><Users size={16}/> Access Control</button>
+          )}
+          
+          {['admin', 'auditor'].includes(user.role) && (
+            <>
+              <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mt-6 mb-2 px-2">Governance</h3>
+              <button onClick={() => setActiveSubTab('audit')} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeSubTab === 'audit' ? 'bg-zinc-900 text-white shadow-sm' : 'text-zinc-600 hover:bg-zinc-200/50'}`}><History size={16}/> Audit Logs</button>
+              {user.role === 'admin' && (
+                <button onClick={() => setActiveSubTab('api')} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${activeSubTab === 'api' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-600 hover:bg-zinc-200/50'}`}><Key size={16}/> API & Secrets</button>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex-1 p-8 bg-white min-h-[500px] overflow-hidden">
+          
+          {activeSubTab === 'general' && user.role !== 'auditor' && (
+            <div className="animate-in fade-in">
+               <h2 className="text-xl font-bold text-zinc-900 mb-6">Workspace Settings</h2>
+               <div className="grid grid-cols-2 gap-6 mb-6">
+                 <div>
+                   <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-2">Organization Name</label>
+                   <input type="text" defaultValue={MOCK_DB.tenant.name} className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900/20" />
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-2">Industry</label>
+                   <select className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900/20">
+                     <option>Consumer Electronics</option>
+                     <option>Automotive</option>
+                   </select>
+                 </div>
+               </div>
+               <button className="px-6 py-2 bg-zinc-900 text-white text-sm font-bold rounded-xl hover:bg-zinc-800 transition-colors">Save Changes</button>
+            </div>
+          )}
+
+          {activeSubTab === 'audit' && (
+            <div className="animate-in fade-in flex flex-col h-full">
+              <div className="flex justify-between items-start mb-6 shrink-0">
+                <div>
+                  <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2"><ShieldCheck size={20} className="text-emerald-600"/> Immutable Audit Trail</h2>
+                  <p className="text-sm text-zinc-500 mt-1">Cryptographically verifiable log of all system actions.</p>
+                </div>
+                <Badge variant="success">Tenant: {MOCK_DB.tenant.id}</Badge>
+              </div>
+
+              {isLoadingLogs ? (
+                <div className="py-20 flex justify-center"><RefreshCw className="animate-spin text-zinc-400" /></div>
+              ) : !['admin', 'auditor'].includes(user.role) ? (
+                <AccessDenied />
+              ) : (
+                <div className="border border-zinc-200 rounded-xl overflow-hidden overflow-y-auto max-h-[500px] custom-scrollbar flex-1">
+                  <table className="w-full text-left relative">
+                    <thead className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500 font-bold border-b border-zinc-200 sticky top-0 z-10 shadow-sm">
+                      <tr><th className="px-4 py-3">Timestamp</th><th className="px-4 py-3">Actor</th><th className="px-4 py-3">Action Event</th><th className="px-4 py-3">Resource</th><th className="px-4 py-3 text-right">Status</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 text-sm font-medium text-zinc-700">
+                      {logs.map((log) => (
+                        <tr key={log.id} className="hover:bg-zinc-50">
+                          <td className="px-4 py-3 text-xs font-mono text-zinc-400 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                          <td className="px-4 py-3 flex items-center gap-2 whitespace-nowrap"><div className="w-6 h-6 rounded bg-zinc-200 flex items-center justify-center text-[10px] text-zinc-600"><Fingerprint size={12}/></div> {log.actor}</td>
+                          <td className="px-4 py-3 font-mono text-xs">{log.action}</td>
+                          <td className="px-4 py-3">{log.resource}</td>
+                          <td className="px-4 py-3 text-right">
+                            {log.status === 'SUCCESS' ? <Badge variant="success">Pass</Badge> : <Badge variant="danger">Fail</Badge>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSubTab === 'users' && user.role === 'admin' && (
+            <div className="animate-in fade-in flex flex-col h-full">
+              <div className="flex justify-between items-start mb-6 shrink-0">
+                <div>
+                  <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2"><Users size={20} className="text-emerald-600"/> Access Control & Roles</h2>
+                  <p className="text-sm text-zinc-500 mt-1">Manage platform users, RBAC permissions, and SSO provisioning.</p>
+                </div>
+                <button className="px-5 py-2.5 bg-zinc-900 text-white text-sm font-bold rounded-xl hover:bg-zinc-800 transition-colors shadow-sm flex items-center gap-2"><Plus size={16} /> Invite User</button>
+              </div>
+
+              {usersLoading ? (
+                <div className="py-20 flex justify-center"><RefreshCw className="animate-spin text-zinc-400" /></div>
+              ) : (
+                <div className="border border-zinc-200 rounded-xl overflow-hidden shadow-sm overflow-y-auto max-h-[500px] custom-scrollbar flex-1">
+                  <table className="w-full text-left bg-white relative">
+                    <thead className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500 font-bold border-b border-zinc-200 sticky top-0 z-10 shadow-sm">
+                      <tr>
+                        <th className="px-6 py-4">User Details</th>
+                        <th className="px-6 py-4">Assigned Role</th>
+                        <th className="px-6 py-4">Authentication</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 text-sm">
+                      {usersList?.map((u) => (
+                        <tr key={u.id} className="hover:bg-zinc-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center font-bold text-sm ring-1 ring-zinc-200">
+                                {u.name.substring(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-bold text-zinc-900">{u.name}</p>
+                                <p className="text-xs text-zinc-500">{u.email}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <Badge variant={u.role === 'admin' ? 'info' : 'default'} className="font-semibold">{u.displayRole}</Badge>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
+                              <Shield size={14} className="text-emerald-500"/> {u.ssoProvider}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <Badge variant="success">Active</Badge>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button className="text-zinc-400 hover:text-zinc-900 p-2 rounded-lg hover:bg-zinc-100 transition-colors"><MoreVertical size={18} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {activeSubTab === 'api' && (
+            <div className="py-20 flex flex-col items-center justify-center text-zinc-400 text-center">
+               <Settings size={32} className="mb-4 opacity-50" />
+               <p className="font-medium">Module loaded for <span className="text-zinc-800 font-bold">{user.displayRole}</span>.</p>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// 6. LAYOUT & NAVIGATION CONTROLLER
+// ============================================================================
+
+function AppLayout() {
+  const { user, logout, activeRoute, setActiveRoute } = useApp();
+  const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : 'US';
+
+  // Ensure users aren't stuck on a route they shouldn't see after switching personas
+  useEffect(() => {
+    const r = user?.role;
+    const allowed = {
+      dashboard: true,
+      product: ['sustainability_manager', 'product_manager', 'executive'].includes(r),
+      hotspots: ['sustainability_manager', 'product_manager', 'executive'].includes(r),
+      initiatives: ['sustainability_manager', 'procurement', 'product_manager', 'executive'].includes(r),
+      reports: ['sustainability_manager', 'executive', 'auditor'].includes(r),
+      suppliers: ['sustainability_manager', 'procurement', 'executive'].includes(r),
+      ingestion: ['sustainability_manager', 'auditor'].includes(r),
+      integrations: r === 'admin',
+      settings: true
+    };
+    if (!allowed[activeRoute]) {
+      setActiveRoute('dashboard');
+    }
+  }, [user, activeRoute, setActiveRoute]);
+
+  const renderActiveFeature = () => {
+    switch(activeRoute) {
+      case 'dashboard': return <DashboardFeature />;
+      case 'product': return <ProductsFeature />;
+      case 'hotspots': return <HotspotsFeature />;
+      case 'initiatives': return <InitiativesFeature />;
+      case 'reports': return <ReportsFeature />;
+      case 'suppliers': return <SuppliersFeature />;
+      case 'ingestion': return <DataHubFeature />;
+      case 'integrations': return <IntegrationsFeature />;
+      case 'settings': return <SettingsFeature />;
+      default: return <DashboardFeature />;
+    }
+  };
+
+  // Strict RBAC Navigation Logic
+  const role = user?.role;
+  const canSeeProducts = ['sustainability_manager', 'product_manager', 'executive'].includes(role);
+  const canSeeHotspots = ['sustainability_manager', 'executive', 'product_manager'].includes(role);
+  const canSeeInitiatives = ['sustainability_manager', 'procurement', 'product_manager', 'executive'].includes(role);
+  const canSeeReports = ['sustainability_manager', 'executive', 'auditor'].includes(role);
+  const canSeeSuppliers = ['sustainability_manager', 'procurement', 'executive'].includes(role);
+  const canSeeDataHub = ['sustainability_manager', 'auditor'].includes(role);
+  const canSeeIntegrations = role === 'admin';
+
+  const hasComplianceModule = canSeeReports || canSeeSuppliers;
+  const hasWorkspaceModule = canSeeDataHub || canSeeIntegrations || true; // Everyone sees settings
+
+  return (
+    <div className="flex h-screen bg-[#fafafa] font-sans text-zinc-900">
+      <aside className="w-64 bg-zinc-950 border-r border-zinc-900 flex flex-col text-zinc-300">
+        <div className="h-20 flex items-center px-6 border-b border-zinc-800/50 gap-3 shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center text-white"><Leaf size={16}/></div>
+          <span className="text-lg font-bold text-white tracking-tight">ZeroByDesign</span>
+        </div>
+
+        <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto custom-scrollbar">
+          <p className="px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Platform</p>
+          <NavItem icon={<LayoutDashboard size={18}/>} label="Dashboard" isActive={activeRoute==='dashboard'} onClick={() => setActiveRoute('dashboard')} />
+          {canSeeProducts && <NavItem icon={<Package size={18}/>} label="Products" isActive={activeRoute==='product'} onClick={() => setActiveRoute('product')} />}
+          {canSeeHotspots && <NavItem icon={<Activity size={18}/>} label="Hotspots & Data" isActive={activeRoute==='hotspots'} onClick={() => setActiveRoute('hotspots')} />}
+          {canSeeInitiatives && <NavItem icon={<Target size={18}/>} label="Initiatives & Actions" isActive={activeRoute==='initiatives'} onClick={() => setActiveRoute('initiatives')} />}
+          
+          {hasComplianceModule && (
+            <>
+              <div className="pt-6 mt-6 border-t border-zinc-800/50"></div>
+              <p className="px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Compliance</p>
+              {canSeeReports && <NavItem icon={<FileText size={18}/>} label="Reports" isActive={activeRoute==='reports'} onClick={() => setActiveRoute('reports')} />}
+              {canSeeSuppliers && <NavItem icon={<Users size={18}/>} label="Suppliers" isActive={activeRoute==='suppliers'} onClick={() => setActiveRoute('suppliers')} />}
+            </>
+          )}
+          
+          {hasWorkspaceModule && (
+            <>
+              <div className="pt-6 mt-6 border-t border-zinc-800/50"></div>
+              <p className="px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Workspace</p>
+              {canSeeDataHub && <NavItem icon={<Database size={18}/>} label="Data Hub" isActive={activeRoute==='ingestion'} onClick={() => setActiveRoute('ingestion')} />}
+              {canSeeIntegrations && <NavItem icon={<Layers size={18}/>} label="Integrations" isActive={activeRoute==='integrations'} onClick={() => setActiveRoute('integrations')} />}
+              <NavItem icon={<Settings size={18}/>} label={role === 'admin' ? "Settings & Security" : "Settings"} isActive={activeRoute==='settings'} onClick={() => setActiveRoute('settings')} />
+            </>
+          )}
+        </nav>
+
+        <div className="p-4 border-t border-zinc-800/50 shrink-0">
+          <div className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-zinc-800/50 transition-colors group cursor-pointer" onClick={logout}>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm ring-1 ring-emerald-500/30">
+                {userInitials}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white leading-tight">{user.name}</p>
+                <p className="text-[10px] text-emerald-500 font-mono uppercase mt-0.5">{user.displayRole}</p>
+              </div>
+            </div>
+            <LogOut size={16} className="text-zinc-500 group-hover:text-rose-400 transition-colors"/>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <header className="bg-white/80 backdrop-blur-xl border-b border-zinc-200 px-10 h-20 flex justify-between items-center shrink-0 z-20">
+          <h1 className="text-xl font-bold capitalize">{activeRoute.replace('-', ' ')}</h1>
+          <Badge variant="info" className="!px-3 !py-1.5"><Shield size={14}/> Enterprise Environment</Badge>
+        </header>
+        <div className="p-10 max-w-7xl mx-auto w-full flex-1 overflow-y-auto custom-scrollbar z-10 pb-20">
+          {renderActiveFeature()}
+        </div>
+      </main>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e4e4e7; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d4d4d8; }
+        aside .custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; }
+        aside .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #52525b; }
+      `}</style>
+    </div>
+  );
+}
+
+// ============================================================================
+// 7. APP ENTRY POINT & AUTH
+// ============================================================================
+
+function AuthScreen() {
+  const { login } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState('select'); // 'select' -> 'mfa'
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [error, setError] = useState('');
+
+  const handleUserSelect = async (user) => {
+    setSelectedUser(user);
+    setLoading(true);
+    setError('');
+    // Simulate SSO gateway redirect delay
+    await new Promise(resolve => setTimeout(resolve, 800));
+    setLoading(false);
+    setStep('mfa');
+  };
+
+  const handleMFA = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    // Simulate backend MFA verification delay
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    if (mfaCode === '626569') {
+      await ServerServices.Auth.verifyMFA(selectedUser);
+      const authUser = await ServerServices.Auth.ssoLogin(selectedUser.email);
+      login(authUser);
+    } else {
+      await ServerServices.Auth.failMFA(selectedUser);
+      setError('Invalid verification code.');
+      setLoading(false);
+      setMfaCode('');
+    }
+  };
+
+  const handleOtpChange = (e) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+    setMfaCode(val);
+  };
+
+  return (
+    <div className="h-screen flex items-center justify-center bg-zinc-50 py-10">
+      <div className="bg-white p-10 rounded-3xl shadow-xl border border-zinc-200 text-center max-w-md w-full animate-in fade-in slide-in-from-bottom-8 flex flex-col max-h-[90vh]">
+        
+        <div className="shrink-0">
+          <div className="w-16 h-16 bg-zinc-900 rounded-2xl mx-auto flex items-center justify-center text-white mb-6 shadow-lg shadow-zinc-900/20"><Leaf size={32}/></div>
+          <h1 className="text-2xl font-bold mb-2 tracking-tight">ZeroByDesign</h1>
+        </div>
+        
+        {step === 'select' ? (
+          <div className="flex flex-col flex-1 overflow-hidden mt-4">
+            <p className="text-sm text-zinc-500 mb-6 font-medium shrink-0">Select a Demo Persona to continue</p>
+            
+            <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 pb-2 flex-1">
+              {MOCK_DB.users.map(u => (
+                <button 
+                  key={u.id}
+                  onClick={() => handleUserSelect(u)}
+                  disabled={loading}
+                  className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50/50 transition-all flex items-center justify-between group disabled:opacity-50 text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-white border border-zinc-200 flex items-center justify-center font-bold text-sm text-zinc-700 shadow-sm group-hover:border-emerald-200 group-hover:text-emerald-600">
+                      {u.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-zinc-900">{u.name}</p>
+                      <p className="text-xs font-semibold text-zinc-400">{u.displayRole}</p>
+                    </div>
+                  </div>
+                  <ChevronRight size={18} className="text-zinc-300 group-hover:text-emerald-500 transition-colors" />
+                </button>
+              ))}
+            </div>
+            {loading && <div className="mt-6 flex justify-center text-emerald-600 shrink-0"><RefreshCw size={20} className="animate-spin"/></div>}
+          </div>
+        ) : (
+          <div className="animate-in fade-in slide-in-from-right-4 duration-300 mt-4">
+            <p className="text-sm text-zinc-500 mb-6 font-medium">Enter the 6-digit code from your authenticator app for <strong className="text-zinc-800">{selectedUser.name}</strong>.</p>
+            <form onSubmit={handleMFA} className="space-y-4">
+              
+              <div className="relative flex justify-center gap-2 mb-6">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className={`w-10 h-14 flex items-center justify-center text-2xl font-mono rounded-xl border-2 ${error ? 'border-rose-500 text-rose-500' : mfaCode.length === i ? 'border-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.2)] text-zinc-900' : 'border-zinc-200 text-zinc-900'} bg-zinc-50`}>
+                    {mfaCode[i] ? '*' : ''}
+                  </div>
+                ))}
+                <input 
+                  type="text" 
+                  value={mfaCode} 
+                  onChange={handleOtpChange} 
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-text" 
+                  autoFocus
+                  required
+                />
+              </div>
+
+              {error && <p className="text-xs font-bold text-rose-500">{error}</p>}
+              <button 
+                type="submit"
+                disabled={loading || mfaCode.length !== 6}
+                className="w-full py-3.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+              >
+                {loading ? <RefreshCw size={18} className="animate-spin" /> : 'Verify MFA'}
+              </button>
+              <button 
+                type="button"
+                onClick={() => { setStep('select'); setError(''); setMfaCode(''); }}
+                disabled={loading}
+                className="text-xs font-semibold text-zinc-400 hover:text-zinc-700 transition-colors mt-4 block mx-auto"
+              >
+                Return to Persona Selection
+              </button>
+            </form>
+          </div>
+        )}
+        
+        <div className="mt-8 pt-6 border-t border-zinc-100 flex items-center justify-center gap-2 text-xs text-zinc-400 font-semibold uppercase tracking-widest shrink-0">
+          <ShieldCheck size={14} className="text-emerald-500" /> AES-256 Encrypted
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AppProvider>
+      <AppContainer />
+    </AppProvider>
+  );
+}
+
+function AppContainer() {
+  const { user } = useApp();
+  return user ? <AppLayout /> : <AuthScreen />;
 }
